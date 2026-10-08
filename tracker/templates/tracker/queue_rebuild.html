@@ -1,0 +1,9 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>Queue a rebuild</h1>
+<div class="card">
+  <p>A rebuild re-derives legs, discovery, missions and aggregates from retained traces, so site edits and threshold changes take effect. Admin decisions (confirm, reject, operator, base) are kept. It runs with the nightly job.</p>
+  {% if pending %}<p class="muted">Already queued: {% for r in pending %}{{ r.source }} by {{ r.requested_by|default:"?" }} at {{ r.requested_at|date:"Y-m-d H:i" }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="source" value="adsblol"><button class="primary">Queue rebuild (adsb.lol)</button></form>
+</div>
+{% endblock %}

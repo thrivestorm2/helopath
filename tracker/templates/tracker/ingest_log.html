@@ -1,0 +1,14 @@
+{% extends "tracker/base.html" %}{% load humanize %}
+{% block content %}
+<h1>Ingest log</h1>
+<div class="scroll"><table>
+<tr><th>Day</th><th>Source</th><th>Status</th><th>Release</th><th class="n">Members scanned</th><th class="n">Kept</th><th class="n">Streamed</th><th class="n">Retained</th><th class="n">Duration</th><th>Error</th></tr>
+{% for r in page %}
+<tr><td>{{ r.day }}</td><td>{{ r.source }}</td><td><span class="badge {{ r.status }}">{{ r.status }}</span></td><td><code>{{ r.release_used }}</code></td>
+  <td class="n">{{ r.members_scanned|intcomma }}</td><td class="n">{{ r.candidates_kept|intcomma }}</td>
+  <td class="n">{{ r.bytes_streamed|filesizeformat }}</td><td class="n">{{ r.bytes_retained|filesizeformat }}</td>
+  <td class="n">{{ r.duration_s|floatformat:0 }} s</td><td class="muted">{{ r.error|truncatechars:120 }}</td></tr>
+{% empty %}<tr><td colspan="10" class="muted">Nothing ingested yet.</td></tr>{% endfor %}
+</table></div>
+{% include "tracker/_pager.html" %}
+{% endblock %}

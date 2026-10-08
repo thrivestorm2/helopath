@@ -1,0 +1,20 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>Log in · Air Medical Tracker</title>
+<link rel="stylesheet" href="{% static 'app.css' %}"></head>
+<body>
+<main style="max-width:380px; margin-top:10vh">
+  <div class="card">
+    <h1>Air Medical Tracker</h1>
+    <p class="muted">Private proof of concept. Accounts are created by an administrator.</p>
+    {% if form.errors %}<ul class="messages"><li class="error">Username and password didn't match.</li></ul>{% endif %}
+    <form method="post">{% csrf_token %}
+      <p><label>Username<br>{{ form.username }}</label></p>
+      <p><label>Password<br>{{ form.password }}</label></p>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="primary" type="submit">Log in</button>
+    </form>
+  </div>
+</main>
+{% include "tracker/_footer.html" %}
+</body></html>

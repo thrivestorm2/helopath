@@ -1,0 +1,15 @@
+[Unit]
+Description=helopath nightly ingest, queued rebuilds and retention purge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=/srv/helopath
+EnvironmentFile=/srv/helopath/.env
+ExecStart=/srv/helopath/.venv/bin/python manage.py nightly
+Nice=10
+# Keep the web workers responsive on a 1 GB droplet.
+MemoryHigh=600M
+TimeoutStartSec=6h
