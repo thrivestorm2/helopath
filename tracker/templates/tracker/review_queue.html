@@ -1,0 +1,38 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>Review queue <span class="muted" style="font-size:14px">{{ queue|length }} discovered aircraft awaiting a decision</span></h1>
+{% for a in queue %}
+<div class="card review">
+  <div>
+    <h2 style="margin-top:0"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></h2>
+    <div><code>{{ a.icao_hex }}</code> · {{ a.make_model|default:"unknown type" }}</div>
+    <div class="muted">Discovered {{ a.discovered_at|date:"Y-m-d" }}</div>
+    <div class="muted">Seen {{ a.first_seen|date:"Y-m-d" }} – {{ a.last_seen|date:"Y-m-d" }}</div>
+  </div>
+  <div>
+    <strong>Evidence:</strong> {{ a.qualifying_visits }} qualifying visits at {{ a.distinct_hospitals }} hospital(s)<br>
+    <span class="muted">{{ a.discovery_rule }}</span><br>
+    <strong>Most visited:</strong> {{ a.top_hospitals_hint|default:"—" }}<br>
+    <strong>Registrant:</strong> {{ a.registrant_hint|default:"—" }}<br>
+    <strong>Callsigns:</strong> {{ a.callsign_hint|default:"—" }} · <strong>readsb operator:</strong> {{ a.operator_hint|default:"—" }}<br>
+    <strong>Inferred base:</strong> {% if a.inferred_base %}{{ a.inferred_base }}{% elif a.inferred_base_lat %}unmatched location {{ a.inferred_base_lat|floatformat:4 }}, {{ a.inferred_base_lon|floatformat:4 }} (see cluster queue){% else %}—{% endif %}
+  </div>
+  <div>
+    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:8px">{% csrf_token %}
+      <button class="primary" name="action" value="confirm">Confirm</button>
+      <button class="danger" name="action" value="reject">Reject</button>
+    </form>
+    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:8px">{% csrf_token %}
+      <select name="operator"><option value="">— operator —</option>{% for o in operators %}<option value="{{ o.pk }}" {% if a.operator_id == o.pk %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+      <button name="action" value="operator">Assign</button>
+    </form>
+    <form method="post" action="{% url 'review_action' a.pk %}">{% csrf_token %}
+      {% if a.inferred_base and not a.base %}<button name="action" value="accept_base">Accept inferred base</button><br>{% endif %}
+      <select name="base" style="max-width:220px"><option value="">— base —</option>{% for s in base_sites %}<option value="{{ s.pk }}" {% if a.base_id == s.pk %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+      <button name="action" value="set_base">Set base</button>
+    </form>
+    {% if a.base %}<div class="muted">Base: {{ a.base }}</div>{% endif %}
+  </div>
+</div>
+{% empty %}<p class="muted">Nothing to review.</p>{% endfor %}
+{% endblock %}

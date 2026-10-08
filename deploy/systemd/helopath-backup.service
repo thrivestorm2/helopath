@@ -1,0 +1,7 @@
+[Unit]
+Description=helopath SQLite backup (keep 7 days)
+
+[Service]
+Type=oneshot
+User=__USER__
+ExecStart=/srv/helopath/deploy/backup.sh

@@ -1,0 +1,39 @@
+{% extends "tracker/base.html" %}{% load humanize %}
+{% block content %}
+<h1>Data quality</h1>
+<form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+<div class="grid">
+  <div class="card stat headline"><div class="k">Resolved-landing rate (90 days)</div>
+    <div class="v">{% if rate is not None %}{% widthratio resolved total 100 %}%{% else %}—{% endif %}</div>
+    <div class="muted">{{ resolved|intcomma }} / {{ total|intcomma }} legs</div></div>
+  {% for label, n, share in by_state %}
+  <div class="card stat"><div class="k">{{ label }}</div><div class="v">{% widthratio share 1 100 %}%</div><div class="muted">{{ n|intcomma }} legs</div></div>
+  {% endfor %}
+  <div class="card stat"><div class="k">Active sites not yet reviewed</div><div class="v">{{ unreviewed_sites }}</div></div>
+</div>
+
+<h2>End state by base</h2>
+<div class="scroll"><table><tr><th>Base</th><th class="n">Legs</th>{% for s, l in end_states %}<th class="n">{{ l }}</th>{% endfor %}</tr>
+{% for row in per_base %}<tr><td>{{ row.0 }}</td><td class="n">{{ row.1 }}</td>{% for v in row|slice:"2:" %}<td class="n">{% widthratio v 1 100 %}%</td>{% endfor %}</tr>
+{% empty %}<tr><td class="muted">No legs.</td></tr>{% endfor %}</table></div>
+
+<h2>End state by arrival site (top 100)</h2>
+<div class="scroll"><table><tr><th>Site</th><th class="n">Legs</th>{% for s, l in end_states %}<th class="n">{{ l }}</th>{% endfor %}</tr>
+{% for row in per_site %}<tr><td>{{ row.0 }}</td><td class="n">{{ row.1 }}</td>{% for v in row|slice:"2:" %}<td class="n">{% widthratio v 1 100 %}%</td>{% endfor %}</tr>
+{% empty %}<tr><td class="muted">No resolved legs.</td></tr>{% endfor %}</table></div>
+
+<h2>Hospital helipads with zero resolved landings ({{ zero_sites|length }})</h2>
+<p class="muted">Either a coverage hole, wrong coordinates or radius, or a pad nobody uses.</p>
+<div class="scroll"><table><tr><th>Site</th><th>City</th><th>State</th><th>FAA ID</th><th>Reviewed</th></tr>
+{% for s in zero_sites %}<tr><td><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a></td><td>{{ s.city }}</td><td>{{ s.state }}</td><td>{{ s.faa_id }}</td><td>{{ s.reviewed|yesno:"✓,no" }}</td></tr>{% endfor %}
+</table></div>
+
+<h2>Known blind spots</h2>
+<div class="card"><ul>
+  <li>Aircraft whose hospital landings happen below receiver coverage are never discovered.</li>
+  <li>A hospital missing from the site table hides every aircraft that uses only that hospital.</li>
+  <li>False positives: charter, maintenance, organ or blood transport, and law-enforcement helicopters that use a hospital pad repeatedly. The review queue exists for these.</li>
+  <li>Military and non-US-registered helicopters are outside the candidate pool (FAA rotorcraft registry).</li>
+  <li>Landings are inferred from ADS-B positions. "Mission" labels are rule-based guesses; none asserts that a patient was carried.</li>
+</ul></div>
+{% endblock %}

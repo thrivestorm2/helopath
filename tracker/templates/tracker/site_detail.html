@@ -1,0 +1,23 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>{{ site.name }}</h1>
+<p class="muted">{{ site.get_site_type_display }} · {{ site.city }}{% if site.state %}, {{ site.state }}{% endif %}
+  {% if site.faa_id %}· FAA {{ site.faa_id }}{% endif %} · radius {{ site.radius_m }} m ·
+  {% if site.reviewed %}reviewed{% else %}not yet reviewed{% endif %}{% if not site.is_active %} · <strong>inactive</strong>{% endif %}
+  {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}">Edit</a>{% endif %}</p>
+<form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+<h2>Arrivals by operator and month ({{ total }} total)</h2>
+<div class="scroll"><table>
+<tr><th>Operator</th>{% for m in months %}<th class="n">{{ m }}</th>{% endfor %}<th class="n">Total</th></tr>
+{% for op, counts, tot in rows %}<tr><td>{{ op }}</td>{% for c in counts %}<td class="n">{{ c }}</td>{% endfor %}<td class="n">{{ tot }}</td></tr>
+{% empty %}<tr><td class="muted">No resolved arrivals at this site.</td></tr>{% endfor %}
+</table></div>
+<div id="map" class="card" style="padding:0;margin-top:14px;height:360px"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const map = L.map('map').setView([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], 15);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+L.circle([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], {radius: {{ site.radius_m }}, color: '#b3261e'}).addTo(map);
+</script>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>Flows</h1>
+<form class="filters" method="get">
+  <select name="operator"><option value="">Any operator</option>{% for o in operators %}<option value="{{ o.pk }}" {% if request.GET.operator == o.pk|stringformat:"s" %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+  <select name="month"><option value="">Any month</option>{% for d in months %}<option value="{{ d|date:'Y-m' }}" {% if request.GET.month == d|date:'Y-m' %}selected{% endif %}>{{ d|date:'Y-m' }}</option>{% endfor %}</select>
+  <select name="label"><option value="">Any label</option>{% for v, l in labels %}<option value="{{ v }}" {% if request.GET.label == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  {% include "tracker/_confirmed_toggle.html" %}
+  <button>Apply</button>
+  <a class="button" href="{% url 'flows_csv' %}?{{ query }}">Export CSV (aggregates)</a>
+</form>
+<div class="scroll"><table>
+<tr><th>Month</th><th>Operator</th><th>Base</th><th>Origin</th><th></th><th>Destination</th><th>Label</th><th class="n">Count</th><th class="n">Mean confidence</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.month|date:"Y-m" }}</td><td>{{ r.operator|default:"(unassigned)" }}</td><td>{{ r.base.name|default:"—" }}</td>
+  <td>{{ r.origin_site.name|default:"—" }}</td><td>→</td><td>{{ r.destination_site.name|default:"—" }}</td>
+  <td>{{ r.get_label_display }}</td><td class="n">{{ r.count }}</td><td class="n">{{ r.mean_confidence|floatformat:2 }}</td></tr>
+{% empty %}<tr><td colspan="9" class="muted">No aggregates yet.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

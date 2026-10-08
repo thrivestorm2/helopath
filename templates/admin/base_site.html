@@ -1,0 +1,7 @@
+{% extends "admin/base.html" %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Air Medical Tracker admin{% endblock %}
+{% block branding %}<div id="site-name"><a href="{% url 'admin:index' %}">Air Medical Tracker admin</a></div>
+{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}{% endblock %}
+{% block userlinks %}<a href="{% url 'dashboard' %}">Back to the app</a> / {{ block.super }}{% endblock %}
+{% block footer %}<div id="footer" style="padding:10px 40px;color:#777;font-size:12px">
+Contains data from adsb.lol, made available under the Open Database License (ODbL). Never record patient information.</div>{% endblock %}
