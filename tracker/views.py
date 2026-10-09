@@ -1,4 +1,5 @@
 import csv
+import re
 from collections import Counter, defaultdict
 from datetime import timedelta
 
@@ -25,6 +26,7 @@ from .models import (
     RebuildRequest,
     Site,
 )
+from .ops import queue_refresh
 from .roles import admin_required
 
 SOURCE = "adsblol"  # Phase 1 dashboards show one source; never mixed (guardrail 2)
@@ -248,13 +250,33 @@ def ingest_log(request):
     return render(request, "tracker/ingest_log.html", {"page": _page(request, IngestRun.objects.all(), 100)})
 
 
+def _site_label(site):
+    """Text for the shared site picker; the trailing #id is what the form submits back."""
+    place = ", ".join(x for x in (site.city, site.state) if x)
+    return f"{site.name}{' · ' + place if place else ''} #{site.pk}"
+
+
+def _site_from_label(label):
+    m = re.search(r"#(\d+)\s*$", label or "")
+    return Site.objects.filter(pk=m[1]).first() if m else None
+
+
 @admin_required
 def review_queue(request):
-    queue = Aircraft.objects.filter(status=Aircraft.DISCOVERED).select_related("inferred_base", "base", "operator")
+    queue = (Aircraft.objects.filter(status=Aircraft.DISCOVERED)
+             .select_related("inferred_base", "base", "operator").order_by("-discovered_at", "pk"))
+    page = Paginator(queue, 25).get_page(request.GET.get("page"))
+    # Suggestions are rendered once per page (not once per card) to keep the page small on phones.
+    hints = Aircraft.objects.exclude(operator_hint="").values_list("operator_hint", flat=True).distinct()
+    operator_options = sorted(set(Operator.objects.values_list("name", flat=True)) | set(hints))
+    sites = Site.objects.filter(is_active=True, site_type__in=[Site.BASE, Site.AIRPORT, Site.HOSPITAL]).order_by(
+        "site_type", "name")
     return render(request, "tracker/review_queue.html", {
-        "queue": queue.order_by("-discovered_at"),
-        "operators": Operator.objects.all(),
-        "base_sites": Site.objects.filter(is_active=True, site_type__in=[Site.BASE, Site.AIRPORT, Site.HOSPITAL]),
+        "page": page,
+        "total": page.paginator.count,
+        "operator_options": operator_options,
+        "site_labels": [_site_label(s) for s in sites],
+        "base_labels": {a.pk: _site_label(a.base) for a in page if a.base},
     })
 
 
@@ -267,25 +289,33 @@ def review_action(request, pk):
         aircraft.status = Aircraft.CONFIRMED if action == "confirm" else Aircraft.REJECTED
         aircraft.save(update_fields=["status"])
         _log(request.user, aircraft, f"Review: {action}")
-        # Status only changes which aircraft count; refresh the cheap downstream tables now.
-        pipeline.build_clusters(SOURCE)
-        pipeline.build_missions(SOURCE)
-        pipeline.build_aggregates(SOURCE)
-        messages.success(request, f"{aircraft} {aircraft.status}; missions and aggregates refreshed.")
+        # Missions, clusters and aggregates are refreshed by the background worker, so this
+        # click returns at once; several quick decisions share one queued refresh.
+        queue_refresh(request.user)
+        messages.success(request, f"{aircraft} {aircraft.status}. Dashboard figures update within a minute.")
     elif action == "operator":
-        op = get_object_or_404(Operator, pk=request.POST["operator"]) if request.POST.get("operator") else None
+        name = " ".join(request.POST.get("operator_name", "").split())[:200]
+        op = Operator.objects.get_or_create(name=name)[0] if name else None
         aircraft.operator = op
         aircraft.save(update_fields=["operator"])
         _log(request.user, aircraft, f"Review: operator set to {op or 'none'}")
+        messages.success(request, f"{aircraft}: operator {op or 'cleared'}.")
     elif action == "accept_base":
         aircraft.base = aircraft.inferred_base
         aircraft.save(update_fields=["base"])
         _log(request.user, aircraft, f"Review: accepted inferred base {aircraft.base}")
     elif action == "set_base":
-        aircraft.base = get_object_or_404(Site, pk=request.POST["base"]) if request.POST.get("base") else None
-        aircraft.save(update_fields=["base"])
-        _log(request.user, aircraft, f"Review: base set to {aircraft.base or 'none'}")
-    return redirect(request.POST.get("next") or "review_queue")
+        label = request.POST.get("base_label", "").strip()
+        site = _site_from_label(label)
+        if label and site is None:
+            messages.error(request, "Pick the base from the suggestions list (it ends with #number).")
+        else:
+            aircraft.base = site
+            aircraft.save(update_fields=["base"])
+            _log(request.user, aircraft, f"Review: base set to {aircraft.base or 'none'}")
+            messages.success(request, f"{aircraft}: base {aircraft.base or 'cleared'}.")
+    nxt = request.POST.get("next", "")
+    return redirect(nxt if nxt.startswith("/review/") else "review_queue")
 
 
 @admin_required
