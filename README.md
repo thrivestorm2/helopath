@@ -26,7 +26,7 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate                 # also creates the Viewer and Admin groups
 python manage.py createsuperuser
-python manage.py test tracker            # 21 tests, synthetic traces plus one real sample
+python manage.py test tracker            # 23 tests, synthetic traces plus one real sample
 python manage.py runserver
 ```
 
@@ -92,6 +92,11 @@ python manage.py coverage_report --day 2026-09-01
   `callsign`. Segmentation and hints need them.
 - When the inferred base is not a Site, the base is kept as coordinates and mission chaining uses a 300 m circle
   around it; the location also surfaces in the cluster queue.
+- Elevated pads: many hospital helipads are on rooftops, where transponders rarely report "ground" and coverage
+  drops on short final. If the signal is lost while the aircraft is slow (< 40 kt) and low (< 500 ft above the
+  site's elevation) within 1 km of a site, the leg is `landing_inferred` at that site, confidence 0.85 minus
+  up to 0.2 for distance and 0.2 if another site is within 1 km. Speed and altitude are the most recent values
+  in the last 60 s. Thresholds: `LOW_SLOW_*` in `tracker/thresholds.py`.
 - A leg that ends in `signal_lost` is bridged to the next leg's departure (within 2 h), so a hospital landing
   below coverage still counts if the aircraft is seen lifting off from that pad.
 - Confirm/reject refreshes missions and aggregates immediately; site edits need a rebuild (queued button,
