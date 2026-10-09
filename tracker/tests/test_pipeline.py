@@ -180,6 +180,47 @@ class PipelineTests(TestCase):
         self.assertEqual(legs[0].start_site, self.base)
         self.assertIsNone(legs[1].end_site)
 
+    def _lost_near(self, gs, alt_agl, offset_deg=0.003, vrate=0, last_gs_missing=False):
+        """A leg that cruises toward Hospital A and is lost ~offset_deg south of it, never reporting ground."""
+        from tracker.geo import SiteIndex
+        from tracker.inference.legs import infer_legs
+        from tracker.sources.base import parse_readsb_trace
+
+        lat_end = HOSP_A[0] - offset_deg
+        pts = []
+        for i in range(30):
+            f = i / 29
+            t = T0 + i * 10
+            near_end = i >= 25
+            alt = 600 + (alt_agl if near_end else 2000)
+            speed = gs if near_end else 120
+            if last_gs_missing and i == 29:
+                speed = None
+            pts.append([t, BASE[0] + (lat_end - BASE[0]) * f, BASE[1] + (HOSP_A[1] - BASE[1]) * f, alt, speed,
+                        0.0, 0, vrate, None, "adsb_icao", None, None, None, None])
+        doc = synth.trace_doc(MED, self.days[0], pts)
+        return infer_legs(list(parse_readsb_trace(doc, "adsblol")), SiteIndex(Site.objects.all()))[0]
+
+    def test_low_and_slow_at_signal_loss_lands_on_nearby_rooftop_pad(self):
+        from tracker.inference.legs import is_qualifying_visit
+
+        # 330 m short of the pad, 300 ft above site elevation (a rooftop), 25 kt, level: no ground report.
+        leg = self._lost_near(gs=25, alt_agl=300)
+        self.assertEqual((leg.end_state, leg.end_site), (Leg.INFERRED, self.hosp_a))
+        self.assertGreaterEqual(leg.confidence, 0.6)
+
+        class L:  # is_qualifying_visit reads these attributes
+            end_site, end_state, confidence = leg.end_site, leg.end_state, leg.confidence
+        self.assertTrue(is_qualifying_visit(L))
+
+        # Speed missing on the very last point: the speed reported seconds earlier is used.
+        self.assertEqual(self._lost_near(gs=25, alt_agl=300, last_gs_missing=True).end_site, self.hosp_a)
+
+    def test_fast_or_high_or_far_signal_loss_is_not_a_landing(self):
+        self.assertEqual(self._lost_near(gs=100, alt_agl=300).end_state, Leg.LOST)   # low pass, too fast
+        self.assertEqual(self._lost_near(gs=25, alt_agl=800).end_state, Leg.LOST)    # too high, not descending
+        self.assertEqual(self._lost_near(gs=25, alt_agl=300, offset_deg=0.02).end_state, Leg.LOST)  # 2.2 km out
+
     def test_pages_render_with_data(self):
         self._ingest_all()
         viewer = User.objects.create_user("v", password="x")

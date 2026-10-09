@@ -110,6 +110,33 @@ def _descending(pts):
     return len(alts) >= 2 and alts[-1] < alts[0]
 
 
+def _recent(pts, attr, window_s=60.0):
+    """Most recent non-null value of attr within window_s of the last point (readsb often omits fields)."""
+    last_ts = pts[-1].ts_utc
+    for p in reversed(pts):
+        if (last_ts - p.ts_utc).total_seconds() > window_s:
+            break
+        v = getattr(p, attr)
+        if v is not None:
+            return v
+    return None
+
+
+def _low_slow_site(airborne, index: SiteIndex):
+    """Nearest site within LOW_SLOW_RADIUS_M if the aircraft was slow and low relative to it when lost.
+
+    Speed is required: without it a low pass over a hospital would count as a landing.
+    """
+    last = airborne[-1]
+    gs, alt = _recent(airborne, "gs_kt"), _recent(airborne, "alt_ft")
+    if gs is None or alt is None or gs >= settings.LOW_SLOW_MAX_GS_KT:
+        return None
+    for dist, site in index.within(last.lat, last.lon, settings.LOW_SLOW_RADIUS_M):
+        if alt - site.elevation_ft < settings.LOW_SLOW_MAX_AGL_FT:
+            return dist, site
+    return None
+
+
 def classify(raw: RawLeg, index: SiteIndex) -> LegResult:
     pts = raw.points
     first, last = pts[0], pts[-1]
@@ -137,6 +164,16 @@ def classify(raw: RawLeg, index: SiteIndex) -> LegResult:
             if agl is not None and agl < settings.LANDED_MAX_AGL_FT and (last_air.gs_kt or 0) < settings.LANDED_MAX_GS_KT:
                 end_state, end_site = Leg.LANDED, hit[1]
                 conf = 1.0 - _neighbor_penalty(index, end_site)
+        if end_state == Leg.LOST:
+            low_slow = _low_slow_site(airborne, index)
+            if low_slow:
+                dist, site = low_slow
+                end_state, end_site = Leg.INFERRED, site
+                conf = (
+                    settings.CONF_LOW_SLOW_CAP
+                    - settings.CONF_LOW_SLOW_DIST_PENALTY * dist / settings.LOW_SLOW_RADIUS_M
+                    - _neighbor_penalty(index, site)
+                )
         if end_state == Leg.LOST:
             near = index.within(last_air.lat, last_air.lon, settings.INFERRED_MAX_DIST_M)
             if near and _descending(airborne):

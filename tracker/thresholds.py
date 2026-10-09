@@ -34,9 +34,18 @@ LANDED_MAX_GS_KT = _env("LANDED_MAX_GS_KT", 20.0)
 INFERRED_MAX_DIST_M = _env("INFERRED_MAX_DIST_M", 3000.0)
 INFERRED_MAX_AGL_FT = _env("INFERRED_MAX_AGL_FT", 1500.0)
 INFERRED_DESCENT_LOOKBACK_S = _env("INFERRED_DESCENT_LOOKBACK_S", 120.0)
+# Low-and-slow at signal loss: many hospital pads are on rooftops or parking structures, where
+# the transponder rarely reports "ground" and coverage often drops on short final. If the last
+# point is this slow and this low near a site, assume the aircraft landed there. The altitude
+# limit is generous because a rooftop pad can sit a few hundred feet above the site elevation.
+LOW_SLOW_MAX_GS_KT = _env("LOW_SLOW_MAX_GS_KT", 40.0)
+LOW_SLOW_MAX_AGL_FT = _env("LOW_SLOW_MAX_AGL_FT", 500.0)
+LOW_SLOW_RADIUS_M = _env("LOW_SLOW_RADIUS_M", 1000.0)
 
 # Confidence (starts at 1.0 and is reduced by each penalty).
 CONF_INFERRED_CAP = _env("CONF_INFERRED_CAP", 0.9)
+CONF_LOW_SLOW_CAP = _env("CONF_LOW_SLOW_CAP", 0.85)
+CONF_LOW_SLOW_DIST_PENALTY = _env("CONF_LOW_SLOW_DIST_PENALTY", 0.2)  # at LOW_SLOW_RADIUS_M
 CONF_DIST_PENALTY = _env("CONF_DIST_PENALTY", 0.4)        # at INFERRED_MAX_DIST_M
 CONF_ALT_PENALTY = _env("CONF_ALT_PENALTY", 0.3)          # at INFERRED_MAX_AGL_FT
 CONF_NEIGHBOR_PENALTY = _env("CONF_NEIGHBOR_PENALTY", 0.2)
