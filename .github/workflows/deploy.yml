@@ -1,0 +1,114 @@
+# Test, then deploy to DigitalOcean App Platform. Runs on every push to main, or by hand
+# (Actions -> Deploy -> Run workflow). Needs two repository secrets:
+#   DIGITALOCEAN_ACCESS_TOKEN  - DigitalOcean API token (read + write)
+#   HELOPATH_ADMIN_PASSWORD    - password for the first "admin" login
+# See docs/DEPLOY.md.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Tests (SQLite)
+        run: python manage.py test tracker
+      - name: Tests (PostgreSQL, as in production)
+        run: python manage.py test tracker
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/helopath
+      - name: Static files build as in production
+        run: python manage.py collectstatic --noinput -v0 && python manage.py check --deploy --fail-level ERROR
+        env:
+          HELOPATH_DEBUG: "0"
+          HELOPATH_SECRET_KEY: ci-only-not-secret-ci-only-not-secret-ci-only-not-secret
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets are set
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          ADMIN_PW: ${{ secrets.HELOPATH_ADMIN_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$DO_TOKEN" ] || missing="$missing DIGITALOCEAN_ACCESS_TOKEN"
+          [ -n "$ADMIN_PW" ] || missing="$missing HELOPATH_ADMIN_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing. Add them under Settings > Secrets and variables > Actions (see docs/DEPLOY.md)."
+            exit 1
+          fi
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Create the database cluster (first deploy only)
+        run: |
+          if doctl databases list --format Name --no-header | grep -qx helopath-db; then
+            echo "helopath-db exists"
+          else
+            echo "Creating PostgreSQL cluster helopath-db (takes about 5-10 minutes)..."
+            doctl databases create helopath-db --engine pg --version 16 --region nyc3 \
+              --size db-s-1vcpu-1gb --num-nodes 1 --wait
+          fi
+
+      - name: Derive the Django secret key
+        # Stable across deploys without another secret to manage: derived from the DO token,
+        # which already grants full control of the app.
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          key=$(python3 -c 'import hmac,hashlib,os;print(hmac.new(os.environ["DO_TOKEN"].encode(),b"helopath-django-secret-v1",hashlib.sha256).hexdigest())')
+          echo "::add-mask::$key"
+          echo "HELOPATH_SECRET_KEY=$key" >> "$GITHUB_ENV"
+
+      - name: Deploy to App Platform
+        uses: digitalocean/app_action/deploy@v2
+        env:
+          HELOPATH_ADMIN_PASSWORD: ${{ secrets.HELOPATH_ADMIN_PASSWORD }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_spec_location: .do/app.yaml
+          print_build_logs: true
+          print_deploy_logs: true
+
+      - name: Show the app address
+        if: always()
+        run: |
+          url=$(doctl apps list --format Spec.Name,DefaultIngress --no-header | awk '$1=="helopath"{print $2}')
+          {
+            echo "## Air Medical Tracker"
+            if [ -n "$url" ]; then
+              echo "Live at **$url**"
+              echo
+              echo "First time? Log in as \`admin\` with your HELOPATH_ADMIN_PASSWORD, then open **Operations**."
+            else
+              echo "App address not available yet. Check the deploy step above or DigitalOcean > Apps."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

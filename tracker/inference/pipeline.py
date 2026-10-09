@@ -5,16 +5,15 @@ Everything here can be dropped and rebuilt from retained raw files (guardrail 3)
 admin-owned Aircraft fields and cluster dismissals are never touched.
 """
 import logging
-import shutil
 from collections import Counter, defaultdict
-from datetime import date, datetime, time, timedelta, timezone as dt_timezone
-from pathlib import Path
+from datetime import datetime, time, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from .. import rawstore
 from ..geo import SiteIndex, haversine_m
 from ..models import (
     Aircraft,
@@ -27,7 +26,6 @@ from ..models import (
     Site,
 )
 from ..sources import get_adapter
-from ..sources.base import raw_root
 from .legs import infer_legs, is_qualifying_visit
 
 log = logging.getLogger("tracker.inference")
@@ -41,28 +39,16 @@ def local_day(ts):
     return ts.astimezone(local_tz()).date()
 
 
-# --- raw file inventory --------------------------------------------------------
-def raw_files_by_hex(source) -> dict[str, list[Path]]:
-    out = defaultdict(list)
-    root = raw_root(source)
-    if root.exists():
-        for p in root.glob("*/*/*/*.json.gz"):
-            out[p.name.split(".")[0]].append(p)
-    for paths in out.values():
-        paths.sort()  # YYYY/MM/DD path order is chronological
-    return out
-
-
 def site_index():
     return SiteIndex(Site.objects.filter(is_active=True))
 
 
 # --- legs ------------------------------------------------------------------------
-def build_legs_for_hex(source, hexid, paths, index, adapter=None):
+def build_legs_for_hex(source, hexid, index, adapter=None):
     adapter = adapter or get_adapter(source)
     points = {}
-    for path in paths:
-        for p in adapter.parse(path):
+    for data in rawstore.traces_for_hex(source, hexid):
+        for p in adapter.parse(data):
             points.setdefault(p.ts_utc, p)  # de-duplicate overlap between day files
     ordered = [points[k] for k in sorted(points)]
     results = infer_legs(ordered, index)
@@ -98,17 +84,17 @@ def build_legs_for_hex(source, hexid, paths, index, adapter=None):
 
 
 def build_legs(source, hexes=None):
-    files = raw_files_by_hex(source)
+    retained = rawstore.hexes(source)
     index = site_index()
     adapter = get_adapter(source)
     if hexes is None:
-        targets = sorted(files)
+        targets = sorted(retained)
     else:
-        targets = sorted(set(hexes) & set(files))
-        Leg.objects.filter(source=source, hex__in=set(hexes) - set(files)).delete()  # nothing left on disk
+        targets = sorted(set(hexes) & retained)
+        Leg.objects.filter(source=source, hex__in=set(hexes) - retained).delete()  # nothing retained any more
     total = 0
     for hexid in targets:
-        total += build_legs_for_hex(source, hexid, files[hexid], index, adapter)
+        total += build_legs_for_hex(source, hexid, index, adapter)
     return total
 
 
@@ -130,10 +116,10 @@ def _rule_window(visits):
 def _hints(source, hexid, legs):
     callsigns = Counter(c for leg in legs for c in leg.callsign.split(",") if c)
     meta = {}
-    paths = raw_files_by_hex(source).get(hexid, [])
-    if paths:
+    latest = rawstore.latest_for_hex(source, hexid)
+    if latest is not None:
         try:
-            meta = get_adapter(source).meta(paths[-1])
+            meta = get_adapter(source).meta(latest)
         except Exception:  # hints are best-effort
             meta = {}
     return meta, ", ".join(c for c, _ in callsigns.most_common(3))
@@ -470,24 +456,10 @@ def purge_undiscovered(source, today=None):
     today = today or timezone.now().date()
     cutoff = today - timedelta(days=settings.UNDISCOVERED_RETENTION_DAYS)
     keep = set(Aircraft.objects.filter(status__in=Aircraft.VISIBLE).values_list("icao_hex", flat=True))
-    removed = 0
-    root = raw_root(source)
-    for day_dir in sorted(root.glob("*/*/*")) if root.exists() else []:
-        try:
-            d = date(int(day_dir.parent.parent.name), int(day_dir.parent.name), int(day_dir.name))
-        except ValueError:
-            continue
-        if d >= cutoff:
-            continue
-        for f in day_dir.glob("*.json.gz"):
-            if f.name.split(".")[0] not in keep:
-                f.unlink()
-                removed += 1
-        if not any(day_dir.iterdir()):
-            shutil.rmtree(day_dir)
+    removed = rawstore.purge_before(source, cutoff, keep)
     stale = Leg.objects.filter(source=source).exclude(hex__in=keep)
     cutoff_dt = datetime.combine(cutoff, time.min, tzinfo=dt_timezone.utc)
     hexes = set(stale.filter(start_ts__lt=cutoff_dt).values_list("hex", flat=True))
     if hexes:
-        build_legs(source, hexes)  # re-derive from what remains on disk
+        build_legs(source, hexes)  # re-derive from what is still retained
     return removed

@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Iterator
 
 from ..geo import BBox
-from .base import ScanStats, TracePoint, load_trace_file, parse_readsb_trace, raw_day_dir
+from .. import rawstore
+from .base import ScanStats, TracePoint, load_trace, parse_readsb_trace, trace_meta
 
 log = logging.getLogger("tracker.ingest")
 
@@ -134,12 +135,10 @@ class AdsbLolAdapter:
         raise FileNotFoundError(f"no adsb.lol release found for {day}")
 
     # --- scanning --------------------------------------------------------------
-    def scan_day(self, day: date, candidates: set[str], bbox: BBox) -> Iterator[Path]:
-        """Stream the day's archive; write and yield in-bbox traces of candidate hexes."""
+    def scan_day(self, day: date, candidates: set[str], bbox: BBox) -> Iterator[str]:
+        """Stream the day's archive; retain and yield in-bbox traces of candidate hexes."""
         self.stats = st = ScanStats()
         st.release_used, parts = self.resolve_parts(day)
-        out_dir = raw_day_dir(self.name, day)
-        out_dir.mkdir(parents=True, exist_ok=True)
         stream = ConcatStream(parts)
         with tarfile.open(fileobj=stream, mode="r|") as tar:
             for member in tar:
@@ -157,19 +156,15 @@ class AdsbLolAdapter:
                 doc = json.loads(gzip.decompress(raw))
                 if not any(bbox.contains(p[1], p[2]) for p in doc.get("trace", ()) if p[1] is not None):
                     continue
-                path = out_dir / f"{hexid}.json.gz"
-                tmp = path.with_suffix(".tmp")
-                tmp.write_bytes(raw)
-                tmp.replace(path)
+                rawstore.put(self.name, day, hexid, raw)
                 st.candidates_kept += 1
                 st.bytes_retained += len(raw)
                 st.kept_hexes.append(hexid)
-                yield path
+                yield hexid
         st.bytes_streamed = stream.total
 
-    def parse(self, path: Path) -> Iterator[TracePoint]:
-        return parse_readsb_trace(load_trace_file(path), self.name)
+    def parse(self, data: bytes) -> Iterator[TracePoint]:
+        return parse_readsb_trace(load_trace(data), self.name)
 
-    def meta(self, path: Path) -> dict:
-        doc = load_trace_file(path)
-        return {k: doc.get(k) for k in ("icao", "r", "t", "desc", "ownOp")}
+    def meta(self, data: bytes) -> dict:
+        return trace_meta(data)

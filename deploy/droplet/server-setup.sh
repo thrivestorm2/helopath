@@ -43,5 +43,5 @@ apt-get update && apt-get -y install caddy
 
 mkdir -p $APP_DIR /var/lib/helopath /var/backups/helopath
 chown -R $DEPLOY_USER:$DEPLOY_USER $APP_DIR /var/lib/helopath /var/backups/helopath
-echo "Now, as $DEPLOY_USER: clone the repo into $APP_DIR and run deploy/deploy.sh"
-echo "Then as root: DOMAIN=$DOMAIN bash $APP_DIR/deploy/install-services.sh"
+echo "Now, as $DEPLOY_USER: clone the repo into $APP_DIR and run deploy/droplet/deploy.sh"
+echo "Then as root: DOMAIN=$DOMAIN bash $APP_DIR/deploy/droplet/install-services.sh"

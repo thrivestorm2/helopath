@@ -2,12 +2,18 @@
 import os
 from pathlib import Path
 
+import dj_database_url
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("HELOPATH_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = os.environ.get("HELOPATH_DEBUG", "1") == "1"
 ALLOWED_HOSTS = [h for h in os.environ.get("HELOPATH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("HELOPATH_CSRF_ORIGINS", "").split(",") if o]
+# DigitalOcean App Platform sets APP_DOMAIN (e.g. helopath-abc12.ondigitalocean.app).
+if os.environ.get("APP_DOMAIN"):
+    ALLOWED_HOSTS.append(os.environ["APP_DOMAIN"])
+    CSRF_TRUSTED_ORIGINS.append(f"https://{os.environ['APP_DOMAIN']}")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -23,6 +29,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -59,18 +66,22 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATA_DIR = Path(os.environ.get("HELOPATH_DATA_DIR", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.environ.get("HELOPATH_DB", DATA_DIR / "helopath.sqlite3"),
-        "OPTIONS": {
-            # WAL lets the web workers read while the nightly job writes.
-            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
-            "transaction_mode": "IMMEDIATE",
-            "timeout": 30,
-        },
+if os.environ.get("DATABASE_URL"):
+    # Production (App Platform managed PostgreSQL).
+    DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=60, conn_health_checks=True)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": os.environ.get("HELOPATH_DB", DATA_DIR / "helopath.sqlite3"),
+            "OPTIONS": {
+                # WAL lets the web workers read while the background job writes.
+                "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+                "transaction_mode": "IMMEDIATE",
+                "timeout": 30,
+            },
+        }
     }
-}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -85,7 +96,13 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT.mkdir(exist_ok=True)  # whitenoise warns if it is missing
 STATICFILES_DIRS = [BASE_DIR / "static"]
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+                    if not DEBUG else "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 if not DEBUG:

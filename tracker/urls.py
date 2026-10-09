@@ -18,4 +18,5 @@ urlpatterns = [
     path("clusters/", views.cluster_queue, name="cluster_queue"),
     path("clusters/<int:pk>/dismiss/", views.cluster_dismiss, name="cluster_dismiss"),
     path("rebuild/", views.queue_rebuild, name="queue_rebuild"),
+    path("operations/", views.operations, name="operations"),
 ]

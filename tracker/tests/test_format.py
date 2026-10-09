@@ -7,10 +7,10 @@ import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from tracker.geo import BBox
-from tracker.models import RegistryAircraft, Site
+from tracker.models import RawTrace, RegistryAircraft, Site
 from tracker.registry import candidate_hexes, load_registry
 from tracker.seed import seed_sites
 from tracker.sources.adsblol import AdsbLolAdapter, parse_preferred
@@ -80,14 +80,18 @@ class ScannerTests(TestCase):
             p = self.tmp / f"x.tar.a{'abc'[i]}"
             p.write_bytes(chunk)
             parts.append(p)
-        with override_settings(DATA_DIR=self.tmp):
-            adapter = AdsbLolAdapter(local_parts=parts)
-            kept = list(adapter.scan_day(day, {"a1b2c3", "a4d5e6"}, BBOX))
-        self.assertEqual([p.name for p in kept], ["a1b2c3.json.gz"])
-        self.assertEqual(kept[0].parent, self.tmp / "raw/adsblol/2026/10/06")
+        adapter = AdsbLolAdapter(local_parts=parts)
+        kept = list(adapter.scan_day(day, {"a1b2c3", "a4d5e6"}, BBOX))
+        self.assertEqual(kept, ["a1b2c3"])
+        row = RawTrace.objects.get()
+        self.assertEqual((row.source, row.day, row.hex), ("adsblol", day, "a1b2c3"))
+        self.assertEqual(bytes(row.data)[:2], b"\x1f\x8b")  # stored exactly as downloaded (gzip)
         self.assertEqual(adapter.stats.candidates_kept, 1)
         self.assertGreater(adapter.stats.bytes_streamed, 0)
-        self.assertGreater(len(list(adapter.parse(kept[0]))), 10)
+        self.assertGreater(len(list(adapter.parse(bytes(row.data)))), 10)
+        # Re-scanning the same day replaces rather than duplicates.
+        list(AdsbLolAdapter(local_parts=parts).scan_day(day, {"a1b2c3"}, BBOX))
+        self.assertEqual(RawTrace.objects.count(), 1)
 
 
 class RegistryAndSeedTests(TestCase):
