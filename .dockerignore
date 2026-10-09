@@ -1,0 +1,10 @@
+.git
+.github
+**/__pycache__
+*.pyc
+data/
+staticfiles/
+.venv/
+.env
+*.sqlite3*
+deploy/droplet/

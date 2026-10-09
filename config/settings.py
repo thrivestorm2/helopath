@@ -1,4 +1,6 @@
 """Django settings for helopath (Air Medical Tracker, Phase 1)."""
+import hashlib
+import hmac
 import os
 from pathlib import Path
 
@@ -6,7 +8,14 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("HELOPATH_SECRET_KEY", "dev-insecure-change-me")
+if os.environ.get("HELOPATH_SECRET_KEY"):
+    SECRET_KEY = os.environ["HELOPATH_SECRET_KEY"]
+elif os.environ.get("DATABASE_URL"):
+    # On App Platform, derive a stable key from the database credentials (already a secret) so
+    # there is no extra variable to manage. Rotating the database password logs everyone out.
+    SECRET_KEY = hmac.new(os.environ["DATABASE_URL"].encode(), b"helopath-django-secret-v1", hashlib.sha256).hexdigest()
+else:
+    SECRET_KEY = "dev-insecure-change-me"
 DEBUG = os.environ.get("HELOPATH_DEBUG", "1") == "1"
 ALLOWED_HOSTS = [h for h in os.environ.get("HELOPATH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("HELOPATH_CSRF_ORIGINS", "").split(",") if o]
@@ -69,6 +78,11 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 if os.environ.get("DATABASE_URL"):
     # Production (App Platform managed PostgreSQL).
     DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=60, conn_health_checks=True)}
+    if os.environ.get("DATABASE_CA_CERT"):
+        # DigitalOcean Managed Postgres signs with its own CA (App Platform: ${db.CA_CERT}); verify it.
+        _ca = DATA_DIR / "db-ca.crt"
+        _ca.write_text(os.environ["DATABASE_CA_CERT"])
+        DATABASES["default"].setdefault("OPTIONS", {}).update(sslmode="verify-full", sslrootcert=str(_ca))
 else:
     DATABASES = {
         "default": {
