@@ -83,3 +83,22 @@ class AccessTests(TestCase):
         r = self.client.get(reverse("flows_csv"))
         self.assertEqual(r["Content-Type"], "text/csv")
         self.assertIn(b"ODbL", r.content)
+
+
+class HealthCheckTests(TestCase):
+    def test_platform_probe_by_container_ip_is_answered(self):
+        # App Platform probes the container by IP; host validation must not turn that into a 400.
+        with self.settings(ALLOWED_HOSTS=["helopath.ondigitalocean.app"]):
+            for host in ["10.244.3.17:8080", "10.244.3.17", "[fd00::1]:8080"]:
+                r = self.client.get("/login/", HTTP_HOST=host)
+                self.assertEqual((r.status_code, r.content), (200, b"ok"), host)
+            r = self.client.get("/healthz", HTTP_HOST="helopath.ondigitalocean.app")
+            self.assertEqual(r.content, b"ok")
+
+    def test_real_hosts_still_validated_and_login_still_required(self):
+        with self.settings(ALLOWED_HOSTS=["helopath.ondigitalocean.app"]):
+            self.assertEqual(self.client.get("/login/", HTTP_HOST="evil.example").status_code, 400)
+            r = self.client.get("/", HTTP_HOST="helopath.ondigitalocean.app")
+            self.assertEqual(r.status_code, 302)
+            self.assertNotEqual(r.content, b"ok")
+            self.assertContains(self.client.get("/login/", HTTP_HOST="helopath.ondigitalocean.app"), "Log in")
