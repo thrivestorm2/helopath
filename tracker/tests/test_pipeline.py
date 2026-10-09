@@ -130,9 +130,13 @@ class PipelineTests(TestCase):
         admin = User.objects.create_user("boss", password="x", is_staff=True)
         admin.groups.add(Group.objects.get(name="Admin"))
         self.client.force_login(admin)
-        self.client.post(reverse("review_action", args=[a.pk]), {"action": "reject"})
+        r = self.client.post(reverse("review_action", args=[a.pk]), {"action": "reject"})
+        self.assertEqual(r.status_code, 302)
         a.refresh_from_db()
         self.assertEqual(a.status, Aircraft.REJECTED)
+        self.assertTrue(MonthlyAggregate.objects.exists())  # refresh is queued, not run in the request
+        from tracker.management.commands.run_worker import tick
+        self.assertEqual(tick(log=lambda *_: None), "task:refresh:ok")
         self.assertFalse(MonthlyAggregate.objects.exists())
         self.assertFalse(Mission.objects.exists())
         pipeline.rebuild("adsblol")

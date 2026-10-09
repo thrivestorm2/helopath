@@ -371,6 +371,7 @@ def build_missions(source):
                 groups.append((cur, True))
                 cur = None
             prev_arr = arrivals[i]
+        built = []  # (mission, leg indexes)
         for idxs, complete in groups:
             stops = [arrivals[i] for i in idxs[:-1]] if complete else [arrivals[i] for i in idxs]
             confs = [legs[i].confidence if legs[i].end_state != Leg.LOST else settings.MISSION_UNKNOWN_CONF
@@ -380,7 +381,7 @@ def build_missions(source):
             else:
                 label, origin, dest, conf = "unknown", None, None, settings.MISSION_UNKNOWN_CONF
                 rule = "incomplete: base>" + "".join(f"{_symbol(s)}>" for s in stops) + "…"
-            m = Mission.objects.create(
+            built.append((Mission(
                 aircraft=aircraft,
                 source=source,
                 start_ts=legs[idxs[0]].start_ts,
@@ -390,10 +391,16 @@ def build_missions(source):
                 destination_site=dest,
                 confidence=round(conf, 3),
                 rule_fired=rule,
-            )
+            ), idxs))
+        # Batched writes: one round trip per 500 rows instead of one per mission and per leg.
+        Mission.objects.bulk_create([m for m, _ in built], batch_size=500)
+        changed = []
+        for m, idxs in built:
             for seq, i in enumerate(idxs):
-                Leg.objects.filter(pk=legs[i].pk).update(mission=m, mission_seq=seq)
-            created += 1
+                legs[i].mission, legs[i].mission_seq = m, seq
+                changed.append(legs[i])
+        Leg.objects.bulk_update(changed, ["mission", "mission_seq"], batch_size=500)
+        created += len(built)
     return created
 
 

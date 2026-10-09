@@ -2,7 +2,8 @@
 # One image for both App Platform components (see .do/app.yaml):
 #   web    - this CMD: apply migrations, create the first admin (once), then serve on 8080
 #   worker - run_command override: python manage.py run_worker
-FROM python:3.12-slim
+# The official python image, pulled through Google's Docker Hub mirror to avoid Hub pull rate limits.
+FROM mirror.gcr.io/library/python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

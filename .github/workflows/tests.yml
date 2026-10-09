@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: mirror.gcr.io/library/postgres:16  # official image via Google's Docker Hub mirror: no Hub pull rate limit
         env:
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
