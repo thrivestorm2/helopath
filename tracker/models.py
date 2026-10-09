@@ -266,3 +266,58 @@ class CoverageComparison(models.Model):
     @property
     def resolved_rate(self):
         return self.resolved_legs / self.legs if self.legs else None
+
+
+class RawTrace(models.Model):
+    """One retained readsb trace (gzip bytes, as downloaded) for one aircraft and UTC day.
+
+    Kept in the database rather than on disk so the app runs on hosts without a persistent
+    filesystem. Only candidate rotorcraft inside the bounding box are kept (about 3 MB/day).
+    """
+
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES)
+    day = models.DateField()
+    hex = models.CharField(max_length=6)
+    data = models.BinaryField()
+    size = models.PositiveIntegerField()
+
+    class Meta:
+        unique_together = [("source", "day", "hex")]
+        indexes = [models.Index(fields=["source", "hex", "day"])]
+
+
+class OpsTask(models.Model):
+    """A chore queued from the Operations page and run by the background worker."""
+
+    LOAD_REGISTRY, SEED_SITES, BACKFILL, REBUILD = "load_registry", "seed_sites", "backfill", "rebuild"
+    KINDS = [
+        (LOAD_REGISTRY, "Load FAA registry"),
+        (SEED_SITES, "Seed FAA sites"),
+        (BACKFILL, "Backfill 90 days"),
+        (REBUILD, "Rebuild derived tables"),
+    ]
+    QUEUED, RUNNING, OK, FAILED = "queued", "running", "ok", "failed"
+
+    kind = models.CharField(max_length=20, choices=KINDS)
+    status = models.CharField(max_length=10, default=QUEUED, db_index=True)
+    log = models.TextField(blank=True)
+    upload = models.BinaryField(null=True, blank=True)  # optional file for seed_sites fallback
+    requested_by = models.ForeignKey("auth.User", null=True, on_delete=models.SET_NULL)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+
+class WorkerState(models.Model):
+    """Single row: heartbeat and the last nightly run, so the Operations page can show health."""
+
+    heartbeat = models.DateTimeField(null=True, blank=True)
+    last_nightly = models.DateField(null=True, blank=True)
+    current = models.CharField(max_length=200, blank=True)
+
+    @classmethod
+    def get(cls):
+        return cls.objects.get_or_create(pk=1)[0]

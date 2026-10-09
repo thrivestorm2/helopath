@@ -72,3 +72,7 @@ LOCAL_TZ = _env("LOCAL_TZ", "America/Chicago")
 # The source that drives discovery and the Aircraft table. Other sources (adsbx) are
 # evaluation-only: they get legs and a coverage report, never Aircraft rows.
 PRIMARY_SOURCE = "adsblol"
+
+# Background worker: when the daily ingest runs (UTC). adsb.lol publishes a day during the following day.
+NIGHTLY_UTC_HOUR = _env("NIGHTLY_UTC_HOUR", 18)
+NIGHTLY_UTC_MINUTE = _env("NIGHTLY_UTC_MINUTE", 30)

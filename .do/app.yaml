@@ -1,0 +1,77 @@
+# DigitalOcean App Platform spec. Deployed by .github/workflows/deploy.yml after tests pass.
+# ${VARS} are filled in by the deploy workflow; ${db.*} and ${APP_DOMAIN} by App Platform.
+name: helopath
+region: nyc
+
+envs:
+  - key: HELOPATH_DEBUG
+    value: "0"
+    scope: RUN_AND_BUILD_TIME
+  - key: DISABLE_COLLECTSTATIC   # the build_command below runs it with production settings
+    value: "1"
+    scope: BUILD_TIME
+  - key: DATABASE_URL
+    value: ${db.DATABASE_URL}
+    scope: RUN_TIME
+  - key: APP_DOMAIN
+    value: ${APP_DOMAIN}
+    scope: RUN_TIME
+  - key: HELOPATH_SECRET_KEY
+    value: ${HELOPATH_SECRET_KEY}
+    type: SECRET
+    scope: RUN_TIME
+  - key: HELOPATH_ADMIN_PASSWORD
+    value: ${HELOPATH_ADMIN_PASSWORD}
+    type: SECRET
+    scope: RUN_TIME
+
+services:
+  - name: web
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: main
+      deploy_on_push: false   # deploys come from the workflow, only after tests pass
+    environment_slug: python
+    build_command: python manage.py collectstatic --noinput
+    run_command: gunicorn config.wsgi:application --workers 2 --bind 0.0.0.0:8080 --timeout 60 --max-requests 1000
+    http_port: 8080
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+    health_check:
+      http_path: /login/
+
+workers:
+  - name: worker   # nightly ingest, backfill and Operations-page tasks
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: main
+      deploy_on_push: false
+    environment_slug: python
+    run_command: python manage.py run_worker
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: main
+      deploy_on_push: false
+    environment_slug: python
+    run_command: python manage.py migrate --noinput && python manage.py ensure_admin
+    instance_size_slug: apps-s-1vcpu-0.5gb
+
+databases:
+  - name: db
+    engine: PG
+    production: true
+    cluster_name: helopath-db
+
+ingress:
+  rules:
+    - component:
+        name: web
+      match:
+        path:
+          prefix: /

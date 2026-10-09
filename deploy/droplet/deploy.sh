@@ -5,7 +5,7 @@ cd /srv/helopath
 git pull --ff-only
 [ -d .venv ] || python3 -m venv .venv
 .venv/bin/pip install -q -r requirements.txt
-[ -f .env ] || { echo "create /srv/helopath/.env first (see deploy/env.example)"; exit 1; }
+[ -f .env ] || { echo "create /srv/helopath/.env first (see deploy/droplet/env.example)"; exit 1; }
 set -a; . ./.env; set +a
 .venv/bin/python manage.py migrate --noinput
 .venv/bin/python manage.py collectstatic --noinput -v0

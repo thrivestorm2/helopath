@@ -311,9 +311,51 @@ def cluster_dismiss(request, pk):
 def queue_rebuild(request):
     if request.method == "POST":
         RebuildRequest.objects.create(source=request.POST.get("source", SOURCE), requested_by=request.user)
-        messages.success(request, "Rebuild queued; it runs with the nightly job.")
+        messages.success(request, "Rebuild queued; the background worker starts it within a minute.")
         return redirect("dashboard")
     return render(request, "tracker/queue_rebuild.html", {
         "pending": RebuildRequest.objects.filter(processed_at__isnull=True).select_related("requested_by"),
     })
 
+
+
+@admin_required
+def operations(request):
+    from django.conf import settings as dj_settings
+
+    from . import rawstore
+    from .models import OpsTask, WorkerState
+
+    if request.method == "POST":
+        kind = request.POST.get("kind")
+        if kind not in dict(OpsTask.KINDS):
+            messages.error(request, "Unknown task.")
+        elif OpsTask.objects.filter(kind=kind, status__in=[OpsTask.QUEUED, OpsTask.RUNNING]).exists():
+            messages.warning(request, "That task is already queued or running.")
+        else:
+            upload = request.FILES.get("upload")
+            task = OpsTask.objects.create(kind=kind, requested_by=request.user,
+                                          upload=upload.read() if upload and kind == OpsTask.SEED_SITES else None)
+            _log(request.user, task, f"Queued task: {task.get_kind_display()}")
+            messages.success(request, f"{task.get_kind_display()} queued. The worker picks it up within a minute.")
+        return redirect("operations")
+
+    state = WorkerState.get()
+    age = (timezone.now() - state.heartbeat).total_seconds() if state.heartbeat else None
+    days_target = dj_settings.BACKFILL_DAYS
+    today = timezone.now().astimezone(timezone.get_fixed_timezone(0)).date()
+    days_done = IngestRun.objects.filter(source=SOURCE, status=IngestRun.OK,
+                                         day__gte=today - timedelta(days=days_target)).values("day").distinct().count()
+    from .models import RegistryAircraft
+    return render(request, "tracker/operations.html", {
+        "state": state, "age": age, "alive": age is not None and (age < 120 or bool(state.current)),
+        "tasks": OpsTask.objects.select_related("requested_by")[:15],
+        "kinds": OpsTask.KINDS,
+        "registry_count": RegistryAircraft.objects.count(),
+        "site_count": Site.objects.filter(is_active=True).count(),
+        "hospital_count": Site.objects.filter(is_active=True, site_type=Site.HOSPITAL).count(),
+        "days_done": days_done, "days_target": days_target,
+        "raw": rawstore.stats(SOURCE),
+        "last_run": IngestRun.objects.filter(source=SOURCE).first(),
+        "nightly_at": f"{dj_settings.NIGHTLY_UTC_HOUR:02d}:{dj_settings.NIGHTLY_UTC_MINUTE:02d} UTC",
+    })

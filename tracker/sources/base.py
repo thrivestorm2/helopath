@@ -2,10 +2,7 @@ import gzip
 import json
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from pathlib import Path
 from typing import Iterator, Optional, Protocol
-
-from django.conf import settings
 
 from ..geo import BBox
 
@@ -47,17 +44,11 @@ class ScanStats:
 class SourceAdapter(Protocol):
     name: str
 
-    def scan_day(self, day: date, candidates: set[str], bbox: BBox) -> Iterator[Path]: ...
+    def scan_day(self, day: date, candidates: set[str], bbox: BBox) -> Iterator[str]:
+        """Retain in-bbox traces of candidate hexes (via tracker.rawstore); yield each kept hex."""
 
-    def parse(self, path: Path) -> Iterator[TracePoint]: ...
-
-
-def raw_root(source: str) -> Path:
-    return Path(settings.DATA_DIR) / "raw" / source
-
-
-def raw_day_dir(source: str, day: date) -> Path:
-    return raw_root(source) / f"{day:%Y}" / f"{day:%m}" / f"{day:%d}"
+    def parse(self, data: bytes) -> Iterator[TracePoint]:
+        """Parse one retained trace (gzip bytes)."""
 
 
 def _num(v):
@@ -97,6 +88,10 @@ def parse_readsb_trace(doc: dict, source: str) -> Iterator[TracePoint]:
         )
 
 
-def load_trace_file(path: Path) -> dict:
-    with gzip.open(path, "rb") as f:
-        return json.load(f)
+def load_trace(data: bytes) -> dict:
+    return json.loads(gzip.decompress(data))
+
+
+def trace_meta(data: bytes) -> dict:
+    doc = load_trace(data)
+    return {k: doc.get(k) for k in ("icao", "r", "t", "desc", "ownOp")}

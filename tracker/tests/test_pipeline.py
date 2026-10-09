@@ -1,6 +1,6 @@
 import shutil
 import tempfile
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from django.contrib.auth.models import Group, User
@@ -10,7 +10,8 @@ from django.utils import timezone
 
 from tracker.inference import pipeline
 from tracker.ingest import ingest_day
-from tracker.models import Aircraft, LandingCluster, Leg, Mission, MonthlyAggregate, Operator, RegistryAircraft, Site
+from tracker.models import (Aircraft, LandingCluster, Leg, Mission, MonthlyAggregate, Operator, RawTrace,
+                            RegistryAircraft, Site)
 from tracker.sources.adsblol import AdsbLolAdapter
 
 from . import synth
@@ -158,8 +159,10 @@ class PipelineTests(TestCase):
         removed = pipeline.purge_undiscovered("adsblol", today=self.days[-1] + timedelta(days=200))
         self.assertEqual(removed, 3)
         self.assertFalse(Leg.objects.filter(hex=OTHER).exists())
-        self.assertEqual(len(list((self.tmp / "raw/adsblol").rglob(f"{MED}.json.gz"))), 3)
-        self.assertEqual(len(list((self.tmp / "raw/adsblol").rglob(f"{OTHER}.json.gz"))), 0)
+        self.assertEqual(RawTrace.objects.filter(hex=MED).count(), 3)
+        self.assertFalse(RawTrace.objects.filter(hex=OTHER).exists())
+        # Within the retention window nothing is purged.
+        self.assertEqual(pipeline.purge_undiscovered("adsblol", today=self.days[-1] + timedelta(days=30)), 0)
 
     def test_inferred_landing_and_signal_lost(self):
         from tracker.inference.legs import infer_legs

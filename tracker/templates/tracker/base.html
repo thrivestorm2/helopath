@@ -23,6 +23,7 @@
   {% if is_admin %}
   <a href="{% url 'review_queue' %}" class="{% if 'review' in n %}active{% endif %}">Review queue</a>
   <a href="{% url 'cluster_queue' %}" class="{% if 'cluster' in n %}active{% endif %}">Cluster queue</a>
+  <a href="{% url 'operations' %}" class="{% if n == 'operations' %}active{% endif %}">Operations</a>
   <a href="{% url 'admin:index' %}">Admin</a>
   {% endif %}
   {% endwith %}

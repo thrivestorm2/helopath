@@ -12,12 +12,12 @@ import gzip
 import json
 import urllib.error
 from datetime import date
-from pathlib import Path
 from typing import Iterator
 
 from ..geo import BBox
 from .adsblol import _open
-from .base import ScanStats, TracePoint, load_trace_file, parse_readsb_trace, raw_day_dir
+from .. import rawstore
+from .base import ScanStats, TracePoint, load_trace, parse_readsb_trace, trace_meta
 
 SAMPLE_URL = "https://samples.adsbexchange.com/traces/{d:%Y}/{d:%m}/{d:%d}/{h2}/trace_full_{hex}.json"
 
@@ -28,12 +28,10 @@ class AdsbxSampleAdapter:
     def __init__(self):
         self.stats = ScanStats()
 
-    def scan_day(self, day: date, candidates: set[str], bbox: BBox) -> Iterator[Path]:
+    def scan_day(self, day: date, candidates: set[str], bbox: BBox) -> Iterator[str]:
         if day.day != 1:
             raise ValueError("ADS-B Exchange samples exist only for the first day of each month")
         self.stats = st = ScanStats(release_used=f"adsbx-sample-{day:%Y-%m-%d}")
-        out_dir = raw_day_dir(self.name, day)
-        out_dir.mkdir(parents=True, exist_ok=True)
         for hexid in sorted(candidates):
             st.members_scanned += 1
             try:
@@ -46,16 +44,15 @@ class AdsbxSampleAdapter:
             doc = json.loads(data)
             if not any(bbox.contains(p[1], p[2]) for p in doc.get("trace", ()) if p[1] is not None):
                 continue
-            path = out_dir / f"{hexid}.json.gz"
-            path.write_bytes(gzip.compress(data))
+            packed = gzip.compress(data)
+            rawstore.put(self.name, day, hexid, packed)
             st.candidates_kept += 1
-            st.bytes_retained += path.stat().st_size
+            st.bytes_retained += len(packed)
             st.kept_hexes.append(hexid)
-            yield path
+            yield hexid
 
-    def parse(self, path: Path) -> Iterator[TracePoint]:
-        return parse_readsb_trace(load_trace_file(path), self.name)
+    def parse(self, data: bytes) -> Iterator[TracePoint]:
+        return parse_readsb_trace(load_trace(data), self.name)
 
-    def meta(self, path: Path) -> dict:
-        doc = load_trace_file(path)
-        return {k: doc.get(k) for k in ("icao", "r", "t", "desc", "ownOp")}
+    def meta(self, data: bytes) -> dict:
+        return trace_meta(data)
