@@ -1,77 +1,56 @@
-# DigitalOcean App Platform spec. Deployed by .github/workflows/deploy.yml after tests pass.
-# ${VARS} are filled in by the deploy workflow; ${db.*} and ${APP_DOMAIN} by App Platform.
+# DigitalOcean App Platform spec. Create with:  doctl apps create --spec .do/app.yaml
+# (or in the control panel: Apps → Create → import this spec; see docs/DEPLOY.md).
+# Deploys automatically on every push to main.
+# Then add HELOPATH_ADMIN_PASSWORD as an encrypted variable under
+# Settings → App-Level Environment Variables. Don't declare it here: a blank component-level
+# variable overrides the app-level value with the same name.
 name: helopath
 region: nyc
-
-envs:
-  - key: HELOPATH_DEBUG
-    value: "0"
-    scope: RUN_AND_BUILD_TIME
-  - key: DISABLE_COLLECTSTATIC   # the build_command below runs it with production settings
-    value: "1"
-    scope: BUILD_TIME
-  - key: DATABASE_URL
-    value: ${db.DATABASE_URL}
-    scope: RUN_TIME
-  - key: APP_DOMAIN
-    value: ${APP_DOMAIN}
-    scope: RUN_TIME
-  - key: HELOPATH_SECRET_KEY
-    value: ${HELOPATH_SECRET_KEY}
-    type: SECRET
-    scope: RUN_TIME
-  - key: HELOPATH_ADMIN_PASSWORD
-    value: ${HELOPATH_ADMIN_PASSWORD}
-    type: SECRET
-    scope: RUN_TIME
-
 services:
   - name: web
     github:
-      repo: ${GITHUB_REPOSITORY}
+      repo: thrivestorm2/helopath
       branch: main
-      deploy_on_push: false   # deploys come from the workflow, only after tests pass
-    environment_slug: python
-    build_command: python manage.py collectstatic --noinput
-    run_command: gunicorn config.wsgi:application --workers 2 --bind 0.0.0.0:8080 --timeout 60 --max-requests 1000
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
     http_port: 8080
-    instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
     health_check:
       http_path: /login/
-
+      initial_delay_seconds: 20
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: DATABASE_CA_CERT
+        scope: RUN_TIME
+        value: ${db.CA_CERT}
+      - key: APP_DOMAIN
+        scope: RUN_TIME
+        value: ${APP_DOMAIN}
 workers:
-  - name: worker   # nightly ingest, backfill and Operations-page tasks
+  # Background worker (tracker/management/commands/run_worker.py): nightly ingest at 18:30 UTC,
+  # queued rebuilds, and the buttons on the Operations page (registry, sites, 90-day backfill).
+  - name: worker
     github:
-      repo: ${GITHUB_REPOSITORY}
+      repo: thrivestorm2/helopath
       branch: main
-      deploy_on_push: false
-    environment_slug: python
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
     run_command: python manage.py run_worker
-    instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1
-
-jobs:
-  - name: migrate
-    kind: PRE_DEPLOY
-    github:
-      repo: ${GITHUB_REPOSITORY}
-      branch: main
-      deploy_on_push: false
-    environment_slug: python
-    run_command: python manage.py migrate --noinput && python manage.py ensure_admin
     instance_size_slug: apps-s-1vcpu-0.5gb
-
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: DATABASE_CA_CERT
+        scope: RUN_TIME
+        value: ${db.CA_CERT}
 databases:
   - name: db
     engine: PG
+    version: "16"
     production: true
     cluster_name: helopath-db
-
-ingress:
-  rules:
-    - component:
-        name: web
-      match:
-        path:
-          prefix: /

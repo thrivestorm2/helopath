@@ -51,7 +51,15 @@ class Command(BaseCommand):
         parser.add_argument("--once", action="store_true", help="Run a single iteration and exit")
 
     def handle(self, *args, **opts):
-        recover_interrupted()
+        # On the very first deploy the web container may still be applying migrations.
+        for attempt in range(20):
+            try:
+                recover_interrupted()
+                break
+            except Exception as e:
+                self.stderr.write(f"waiting for the database to be ready ({e.__class__.__name__})")
+                close_old_connections()
+                time.sleep(15)
         self.stdout.write("worker started")
         while True:
             close_old_connections()

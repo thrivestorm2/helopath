@@ -1,91 +1,93 @@
 # Putting the tracker online (DigitalOcean App Platform)
 
-You do this once. It takes about 15 minutes of clicking, then 20–30 minutes of waiting. After that, every change
-merged into `main` goes live by itself, but only if all the automated tests pass first.
+The setup is the same as mediccred. DigitalOcean watches the `main` branch and redeploys on every merge. Pull
+requests are where changes are tested: GitHub runs the full test suite on each one and shows a ✓ or ✗ before you
+merge. GitHub needs no DigitalOcean token or secrets.
 
-**Cost:** about **$25/month**. That covers the website ($5), the background worker ($5) and the database ($15).
-How to stop paying is at the bottom of this page.
+**Cost:** about **$25/month**. That's the website ($5), the background worker ($5) and the database ($15).
 
 ---
 
-## Step 1 — DigitalOcean account
+## One-time setup
 
-1. Sign up or log in at <https://cloud.digitalocean.com> and add a payment method.
+### 1. Merge the pull request
 
-## Step 2 — Let DigitalOcean read the code on GitHub
+Open the pull request, wait for the **Tests** check to show a green ✓, then click **Merge pull request**.
 
-1. In DigitalOcean, click the green **Create** button (top right), then **App Platform**.
-2. Under "Create from source code", choose **GitHub**, then click **Install & Authorize** (or **Edit your GitHub
-   permissions**).
-3. GitHub opens. Choose **Only select repositories**, pick **helopath**, and click **Install & Authorize**.
-4. Back in DigitalOcean, **close the page**. Don't finish creating an app here, because the automatic deploy
-   creates it for you.
+### 2. Create the database
 
-## Step 3 — Create a DigitalOcean API token
+In DigitalOcean, go to **Databases → Create Database Cluster** and choose:
 
-1. In DigitalOcean's left sidebar, click **API** (near the bottom).
-2. Click **Generate New Token**.
-   - **Name:** `helopath-github`
-   - **Expiration:** **No expiry**. If you choose a date, deploys stop working when it passes.
-   - **Scopes:** **Full Access**
-3. Click **Generate Token** and **copy it now**. DigitalOcean shows it only once.
+| Setting | Choose |
+|---|---|
+| Engine | **PostgreSQL 16** |
+| Datacenter | **New York** (any NYC) |
+| Plan | **Basic**, 1 GB RAM / 1 vCPU / 10 GB disk (about $15/month) |
+| Name | **`helopath-db`** (exactly; the app looks for this name) |
 
-## Step 4 — Give GitHub the two secrets
+Click **Create** and wait until it says **Online** (about 5 minutes).
 
-1. Open the repository on GitHub: <https://github.com/thrivestorm2/helopath>
-2. Click **Settings** (top tab), then in the left sidebar **Secrets and variables → Actions**.
-3. Click **New repository secret** and add:
+### 3. Create the app from the spec
 
-   | Name (exactly) | Secret |
-   |---|---|
-   | `DIGITALOCEAN_ACCESS_TOKEN` | the token from Step 3 |
-   | `HELOPATH_ADMIN_PASSWORD` | a password you make up for your admin login (12+ characters) |
+Do this the same way you did for mediccred: **Apps → Create App**, then import the spec file **`.do/app.yaml`**
+from the `helopath` repository (branch `main`).
 
-## Step 5 — Turn it on
+If the wizard only offers to detect components, let it, and finish creating the app. Then go to the app's
+**Settings → App Spec → Edit**, replace everything with the contents of `.do/app.yaml`, and save. Either way you
+should end up with three things in the app:
+- **web**, the website;
+- **worker**, which does the background jobs;
+- **db**, attached to `helopath-db`.
 
-1. Open the pull request named **"Deploy to DigitalOcean App Platform"** and click **Merge pull request**, then
-   **Confirm merge**.
-2. Click the **Actions** tab. A run called **Deploy** is in progress (a yellow dot).
-   - The first run takes **20–30 minutes**, because it creates the database. Later runs take about 5–10 minutes.
-   - A green check means it's live. Click the run, and the summary at the bottom shows your address, like
-     `https://helopath-xxxxx.ondigitalocean.app`. Bookmark it.
+### 4. Set your admin password
 
-## Step 6 — First login and loading the data
+In the app, go to **Settings → App-Level Environment Variables → Edit** and add:
 
-1. Open your address and log in as **`admin`** with the password from Step 4.
-2. Click **Operations** in the top menu. The "Background worker" box should say **running**.
-3. Press the buttons in order. Each one shows its progress in "Recent tasks"; refresh the page to update it.
+| Key | Value | Encrypt |
+|---|---|---|
+| `HELOPATH_ADMIN_PASSWORD` | a password you choose (12+ characters) | ✓ |
+
+Save. The app redeploys by itself. When it's done, the address at the top of the app page
+(`https://helopath-xxxxx.ondigitalocean.app`) shows the login page.
+
+You don't need anything else. Unlike mediccred's `AUTH_SECRET`, the app's internal secret key is derived
+automatically. The database connection and its certificate are wired up by the spec.
+
+### 5. First login and loading the data
+
+1. Log in as **`admin`** with that password.
+2. Open **Operations** (top menu). "Background worker" should say **running**.
+3. Press, in order:
    1. **Load FAA registry** (a few minutes).
-   2. **Seed FAA sites** (a minute or two). If it fails, download the FAA "NASR subscription" CSV file and pick it
-      with the file chooser next to the button, then press it again.
+   2. **Seed FAA sites** (a minute or two). If it fails, upload the FAA NASR `APT_BASE.csv` with the file chooser
+      next to the button.
    3. Review the hospital helipads (the link is on the page). You can carry on while the next step runs.
-   4. **Start 90-day backfill** (about 8–9 hours). You can close the browser; it keeps running.
-4. After that, everything is automatic. New days are added every evening.
+   4. **Start 90-day backfill** (about 8–9 hours). You can close the browser.
 
-## Everyday tasks
+After that, new days are added every evening automatically.
 
-- **Change your password:** click **Admin** (top menu), then **Change password** (top right).
-- **Add a person who can only look:** go to **Admin → Users → Add user**. Set a username and password, then on
-  the next page add the group **Viewer** and save.
-- **Add another admin:** do the same as above, but also tick **Staff status** and add the group **Admin**.
-- **Apply site edits:** go to **Operations** and press **Rebuild**.
+---
+
+## Everyday use
+
+- **Making changes:** open a pull request, check that **Tests** shows ✓, then merge. DigitalOcean deploys `main`
+  within a few minutes.
+- **Optional safety net:** in GitHub go to **Settings → Branches → Add rule** for `main`, then tick "Require
+  status checks to pass" and select **test**. GitHub then won't let a red pull request merge.
+- **Change your password:** go to **Admin** (top menu), then **Change password**.
+- **Add a person who can only look:** go to **Admin → Users → Add user**, then add the group **Viewer**.
+- **Add another admin:** do the same, but also tick **Staff status** and add the group **Admin**.
+- **Apply site edits:** go to **Operations → Rebuild**.
 
 ## If something goes wrong
 
-- **Red ✗ on a Deploy run:** click it, then click the step with the red ✗. The first error lines usually say
-  what's wrong.
-  - *"Missing repository secret(s)"*: redo Step 4 and check the names are spelled exactly.
-  - *GitHub / repository access errors*: redo Step 2.
-  - *"Unable to authenticate" / 401*: the token expired or was mistyped. Make a new one (Step 3) and replace the
-    secret.
-  - **A test failed:** nothing was deployed and the live site is unchanged. That's the safety net working. The
-    change needs fixing first.
-- **"Background worker: not responding"** for more than 15 minutes: in DigitalOcean, open **Apps → helopath →
-  Runtime Logs** and choose **worker** to see what it says.
-- **Run a deploy by hand:** go to **Actions → Deploy → Run workflow**.
+- **A deploy failed:** in DigitalOcean go to **Apps → helopath → Activity**, click the failed deployment and
+  read the build or deploy log. The live site keeps running the previous version.
+- **"Background worker: not responding":** go to **Apps → helopath → Runtime Logs** and choose **worker**.
+- **The login page never appears after the first deploy:** check that the database is named exactly
+  `helopath-db` and is **Online**.
 
-## Stopping and starting
+## Stopping
 
-- **To stop paying:** in DigitalOcean, delete **Apps → helopath** *and* **Databases → helopath-db**. Deleting the
-  database erases all data permanently.
-- **To start again later:** go to **Actions → Deploy → Run workflow**. This creates everything fresh.
+To stop paying, delete **Apps → helopath** *and* **Databases → helopath-db**. Deleting the database erases all
+data permanently.

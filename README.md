@@ -7,8 +7,8 @@ Phase 1 must produce is the **resolved-landing rate**: legs ending at an identif
 Stack: Django 5 · PostgreSQL in production (SQLite locally) · server-rendered templates + HTMX + Leaflet · Gunicorn ·
 DigitalOcean App Platform (web service + background worker + managed PostgreSQL).
 
-**To put it online, follow [docs/DEPLOY.md](docs/DEPLOY.md).** Every merge to `main` then deploys automatically
-after the tests pass.
+**To put it online, follow [docs/DEPLOY.md](docs/DEPLOY.md).** DigitalOcean watches `main` and deploys every merge;
+pull requests run the test suite (`.github/workflows/tests.yml`) so you can see a ✓ before merging.
 
 ## Layout
 
@@ -20,7 +20,8 @@ after the tests pass.
 | `tracker/inference/pipeline.py` | Discovery, inferred base, landing clusters, missions, aggregates, rebuild, purge. |
 | `tracker/registry.py`, `tracker/seed.py` | FAA registry loader (candidate pool) and FAA facility site seed. |
 | `tracker/views.py`, `tracker/templates/` | Pages; `tracker/admin.py` is Django admin with CSV import/export. |
-| `.do/app.yaml`, `.github/workflows/deploy.yml` | App Platform spec and the test-then-deploy workflow. |
+| `Dockerfile`, `.do/app.yaml` | Production image and App Platform spec (web + worker + managed Postgres). |
+| `.github/workflows/tests.yml` | Tests on every pull request (SQLite and PostgreSQL) plus an image build. |
 | `tracker/ops.py`, `run_worker` command | Background worker: nightly ingest and Operations-page tasks. |
 | `tracker/rawstore.py` | Retained raw traces (gzip blobs in the `RawTrace` table). |
 | `deploy/droplet/` | Unused fallback: the same app on a plain $6 droplet. |
@@ -73,7 +74,7 @@ python manage.py coverage_report --day 2026-09-01
 
 ## Deploying
 
-See [docs/DEPLOY.md](docs/DEPLOY.md) (App Platform, about $25/month, push-to-deploy). The cheaper hands-on
+See [docs/DEPLOY.md](docs/DEPLOY.md) (App Platform, about $25/month, deploys on every merge to `main`). The cheaper hands-on
 droplet setup from the original spec (about $7–8/month) is kept in `deploy/droplet/`.
 
 ## How the guardrails are enforced
