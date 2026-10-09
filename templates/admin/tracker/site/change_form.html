@@ -1,0 +1,30 @@
+{% extends "admin/import_export/change_form.html" %}{% load static %}
+{% block extrahead %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+{% endblock %}
+{% block after_field_sets %}{{ block.super }}
+<fieldset class="module aligned">
+  <h2>Map picker</h2>
+  <p class="help" style="margin:8px 10px">Click the map to set latitude/longitude. The circle shows the landing radius.</p>
+  <div id="site-map" style="height:420px;margin:8px 10px"></div>
+</fieldset>
+<script>
+(function () {
+  const lat = document.getElementById('id_lat'), lon = document.getElementById('id_lon'), rad = document.getElementById('id_radius_m');
+  const start = (lat.value && lon.value) ? [parseFloat(lat.value), parseFloat(lon.value)] : [40.0, -89.4];
+  const map = L.map('site-map').setView(start, lat.value ? 16 : 6);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+  let marker = null, circle = null;
+  function draw() {
+    if (!lat.value || !lon.value) return;
+    const p = [parseFloat(lat.value), parseFloat(lon.value)], r = parseFloat(rad.value || 300);
+    if (!marker) { marker = L.marker(p).addTo(map); circle = L.circle(p, {radius: r, color: '#b3261e'}).addTo(map); }
+    marker.setLatLng(p); circle.setLatLng(p); circle.setRadius(r);
+  }
+  map.on('click', e => { lat.value = e.latlng.lat.toFixed(6); lon.value = e.latlng.lng.toFixed(6); draw(); });
+  [lat, lon, rad].forEach(el => el.addEventListener('input', draw));
+  draw();
+})();
+</script>
+{% endblock %}
