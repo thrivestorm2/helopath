@@ -1,0 +1,56 @@
+# DigitalOcean App Platform spec. Create with:  doctl apps create --spec .do/app.yaml
+# (or in the control panel: Apps → Create → import this spec; see docs/DEPLOY.md).
+# Deploys automatically on every push to main.
+# Then add HELOPATH_ADMIN_PASSWORD as an encrypted variable under
+# Settings → App-Level Environment Variables. Don't declare it here: a blank component-level
+# variable overrides the app-level value with the same name.
+name: helopath
+region: nyc
+services:
+  - name: web
+    github:
+      repo: thrivestorm2/helopath
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    health_check:
+      http_path: /login/
+      initial_delay_seconds: 20
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: DATABASE_CA_CERT
+        scope: RUN_TIME
+        value: ${db.CA_CERT}
+      - key: APP_DOMAIN
+        scope: RUN_TIME
+        value: ${APP_DOMAIN}
+workers:
+  # Background worker (tracker/management/commands/run_worker.py): nightly ingest at 18:30 UTC,
+  # queued rebuilds, and the buttons on the Operations page (registry, sites, 90-day backfill).
+  - name: worker
+    github:
+      repo: thrivestorm2/helopath
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    run_command: python manage.py run_worker
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: DATABASE_CA_CERT
+        scope: RUN_TIME
+        value: ${db.CA_CERT}
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: true
+    cluster_name: helopath-db

@@ -1,0 +1,41 @@
+{% extends "tracker/base.html" %}{% load humanize %}
+{% block content %}
+<h1>Operations</h1>
+<div class="grid">
+  <div class="card stat"><div class="k">Background worker</div>
+    <div class="v" style="font-size:20px">{% if alive %}<span class="badge ok">running</span>{% elif state.heartbeat %}<span class="badge failed">not responding</span>{% else %}<span class="badge failed">never started</span>{% endif %}</div>
+    <div class="muted">{% if state.heartbeat %}last seen {{ state.heartbeat|naturaltime }}{% endif %}{% if state.current %}<br>Now: {{ state.current }}{% endif %}</div></div>
+  <div class="card stat"><div class="k">Backfill progress</div><div class="v">{{ days_done }}/{{ days_target }}</div><div class="muted">days ingested</div></div>
+  <div class="card stat"><div class="k">FAA registry</div><div class="v">{{ registry_count|intcomma }}</div><div class="muted">rotorcraft in candidate pool</div></div>
+  <div class="card stat"><div class="k">Sites</div><div class="v">{{ site_count|intcomma }}</div><div class="muted">{{ hospital_count|intcomma }} hospital helipads</div></div>
+  <div class="card stat"><div class="k">Retained traces</div><div class="v">{{ raw.rows|default:0|intcomma }}</div><div class="muted">{{ raw.bytes|default:0|filesizeformat }} over {{ raw.days }} days</div></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">First-time setup: press these in order</h2>
+  <ol>
+    <li><form method="post" style="display:inline">{% csrf_token %}<button class="primary" name="kind" value="load_registry">Load FAA registry</button></form>
+      <span class="muted">Downloads the FAA aircraft registry (about 60 MB, a few minutes). Repeat monthly.</span></li>
+    <li style="margin-top:10px"><form method="post" enctype="multipart/form-data" style="display:inline">{% csrf_token %}<button class="primary" name="kind" value="seed_sites">Seed FAA sites</button>
+      <span class="muted">Downloads FAA airport and heliport data. If that fails, choose <code>APT_BASE.csv</code> (or the NASR CSV zip) here and press again:</span>
+      <input type="file" name="upload" accept=".csv,.zip"></form></li>
+    <li style="margin-top:10px">Review hospital helipads in <a href="{% url 'admin:tracker_site_changelist' %}?site_type__exact=hospital_helipad&reviewed__exact=0">Admin → Sites</a> (can continue while the backfill runs).</li>
+    <li style="margin-top:10px"><form method="post" style="display:inline">{% csrf_token %}<button class="primary" name="kind" value="backfill">Start {{ days_target }}-day backfill</button></form>
+      <span class="muted">About 8–9 hours. Safe to press again: finished days are skipped.</span></li>
+  </ol>
+  <div class="muted">After that, everything runs by itself: the worker ingests each new day after {{ nightly_at }}.</div>
+  <form method="post" class="filters" style="margin-top:10px">{% csrf_token %}
+    <button name="kind" value="rebuild">Rebuild</button><span class="muted">after editing sites or thresholds, to apply the changes.</span></form>
+</div>
+
+<h2>Recent tasks</h2>
+<div class="scroll"><table>
+<tr><th>Requested</th><th>Task</th><th>By</th><th>Status</th><th>Log</th></tr>
+{% for t in tasks %}
+<tr><td>{{ t.requested_at|date:"Y-m-d H:i" }}</td><td>{{ t.get_kind_display }}</td><td>{{ t.requested_by|default:"—" }}</td>
+  <td><span class="badge {% if t.status == 'ok' %}ok{% elif t.status == 'failed' %}failed{% else %}discovered{% endif %}">{{ t.status }}</span></td>
+  <td><details><summary class="muted">{{ t.log.splitlines|last|default:"—"|truncatechars:90 }}</summary><pre style="white-space:pre-wrap;max-height:300px;overflow:auto">{{ t.log }}</pre></details></td></tr>
+{% empty %}<tr><td colspan="5" class="muted">No tasks yet.</td></tr>{% endfor %}
+</table></div>
+{% if last_run %}<p class="muted">Last ingest: {{ last_run.day }} <span class="badge {{ last_run.status }}">{{ last_run.status }}</span> — see the <a href="{% url 'ingest_log' %}">ingest log</a>.</p>{% endif %}
+{% endblock %}

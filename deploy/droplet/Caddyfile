@@ -1,0 +1,15 @@
+__DOMAIN__ {
+	encode gzip
+	handle_path /static/* {
+		root * /srv/helopath/staticfiles
+		file_server
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

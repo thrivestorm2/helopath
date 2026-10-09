@@ -1,0 +1,50 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>Sites</h1>
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Name, FAA ID, city">
+  <select name="type"><option value="">Any type</option>{% for v, l in types %}<option value="{{ v }}" {% if request.GET.type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="state"><option value="">Any state</option>{% for s in states %}<option {% if request.GET.state == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+  <select name="view"><option value="table" {% if view == 'table' %}selected{% endif %}>Table</option><option value="map" {% if view == 'map' %}selected{% endif %}>Map</option></select>
+  <button>Apply</button>
+  {% if is_admin %}<a class="button" href="{% url 'admin:tracker_site_add' %}">Add site</a>{% endif %}
+</form>
+{% if view == 'map' %}
+<div id="map"></div>
+{{ map_sites|json_script:"sites" }}
+{% else %}
+<div class="scroll"><table>
+<tr>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'name' %}-{% endif %}name">Name</a></th>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'site_type' %}-{% endif %}site_type">Type</a></th>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'city' %}-{% endif %}city">City</a></th>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'state' %}-{% endif %}state">State</a></th>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'faa_id' %}-{% endif %}faa_id">FAA ID</a></th>
+  <th>Coordinates</th>
+  <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == 'radius_m' %}-{% endif %}radius_m">Radius (m)</a></th>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'reviewed' %}-{% endif %}reviewed">Reviewed</a></th>
+</tr>
+{% for s in page %}
+<tr>
+  <td><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a></td><td>{{ s.get_site_type_display }}</td>
+  <td>{{ s.city }}</td><td>{{ s.state }}</td><td>{{ s.faa_id }}</td>
+  <td><code>{{ s.lat|floatformat:5 }}, {{ s.lon|floatformat:5 }}</code></td><td class="n">{{ s.radius_m }}</td>
+  <td>{% if s.reviewed %}✓{% else %}<span class="muted">no</span>{% endif %}</td>
+</tr>
+{% empty %}<tr><td colspan="8" class="muted">No sites match.</td></tr>{% endfor %}
+</table></div>
+{% include "tracker/_pager.html" %}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if view == 'map' %}
+<script>
+const sites = JSON.parse(document.getElementById('sites').textContent);
+const map = L.map('map');
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+const colors = {hospital_helipad: '#b3261e', base: '#1d2430', airport: '#3366cc', other: '#888'};
+const g = L.featureGroup().addTo(map);
+sites.forEach(s => L.circle([s.lat, s.lon], {radius: Math.max(s.r, 200), color: colors[s.type]})
+  .bindPopup(`<a href="/sites/${s.id}/">${s.name.replace(/</g, '&lt;')}</a>`).addTo(g));
+if (sites.length) map.fitBounds(g.getBounds()); else map.setView([40, -89.4], 6);
+</script>
+{% endif %}{% endblock %}

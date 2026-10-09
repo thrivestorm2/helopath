@@ -1,0 +1,25 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>Missions <span class="muted" style="font-size:14px">(inferred)</span></h1>
+<form class="filters" method="get">
+  <select name="label"><option value="">Any label</option>{% for v, l in labels %}<option value="{{ v }}" {% if request.GET.label == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="operator"><option value="">Any operator</option>{% for o in operators %}<option value="{{ o.pk }}" {% if request.GET.operator == o.pk|stringformat:"s" %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+  <label class="muted">Min confidence <input type="number" name="min_conf" step="0.1" min="0" max="1" value="{{ request.GET.min_conf }}" style="width:5em"></label>
+  {% include "tracker/_confirmed_toggle.html" %}
+  <button>Apply</button>
+</form>
+<div class="scroll"><table>
+<tr><th>Start</th><th>Aircraft</th><th>Operator</th><th>Label</th><th>Origin</th><th>Destination</th><th class="n">Confidence</th><th>Rule fired</th></tr>
+{% for m in page %}
+<tr>
+  <td>{{ m.start_ts|date:"Y-m-d H:i" }}</td>
+  <td><a href="{% url 'aircraft_detail' m.aircraft_id %}">{{ m.aircraft }}</a></td>
+  <td>{{ m.aircraft.operator|default:"—" }}</td>
+  <td>{{ m.get_label_display }}</td>
+  <td>{{ m.origin_site.name|default:"—" }}</td><td>{{ m.destination_site.name|default:"—" }}</td>
+  <td class="n">{{ m.confidence|floatformat:2 }}</td><td><code>{{ m.rule_fired }}</code></td>
+</tr>
+{% empty %}<tr><td colspan="8" class="muted">No missions.</td></tr>{% endfor %}
+</table></div>
+{% include "tracker/_pager.html" %}
+{% endblock %}

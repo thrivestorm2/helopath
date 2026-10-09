@@ -1,0 +1,40 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}Air Medical Tracker{% endblock %}</title>
+<link rel="stylesheet" href="{% static 'app.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
+<script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+</head>
+<body>
+<header>
+  <a class="brand" href="{% url 'dashboard' %}">Air Medical Tracker</a>
+  {% with n=request.resolver_match.url_name %}
+  <a href="{% url 'dashboard' %}" class="{% if n == 'dashboard' %}active{% endif %}">Dashboard</a>
+  <a href="{% url 'aircraft_list' %}" class="{% if 'aircraft' in n %}active{% endif %}">Aircraft</a>
+  <a href="{% url 'site_list' %}" class="{% if 'site' in n %}active{% endif %}">Sites</a>
+  <a href="{% url 'missions' %}" class="{% if n == 'missions' %}active{% endif %}">Missions</a>
+  <a href="{% url 'flows' %}" class="{% if n == 'flows' %}active{% endif %}">Flows</a>
+  <a href="{% url 'quality' %}" class="{% if n == 'quality' %}active{% endif %}">Data quality</a>
+  <a href="{% url 'ingest_log' %}" class="{% if n == 'ingest_log' %}active{% endif %}">Ingest log</a>
+  {% if is_admin %}
+  <a href="{% url 'review_queue' %}" class="{% if 'review' in n %}active{% endif %}">Review queue</a>
+  <a href="{% url 'cluster_queue' %}" class="{% if 'cluster' in n %}active{% endif %}">Cluster queue</a>
+  <a href="{% url 'operations' %}" class="{% if n == 'operations' %}active{% endif %}">Operations</a>
+  <a href="{% url 'admin:index' %}">Admin</a>
+  {% endif %}
+  {% endwith %}
+  <span class="spacer"></span>
+  <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button>Log out {{ user.username }}</button></form>
+</header>
+<main>
+  {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+{% include "tracker/_footer.html" %}
+{% block scripts %}{% endblock %}
+</body>
+</html>
