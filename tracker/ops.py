@@ -45,6 +45,10 @@ def run_task(task: OpsTask):
             run_backfill(settings.BACKFILL_DAYS, log=log)
         elif task.kind == OpsTask.REBUILD:
             log(str(pipeline.rebuild(settings.PRIMARY_SOURCE)))
+        elif task.kind == OpsTask.REFRESH:
+            src = settings.PRIMARY_SOURCE
+            log(f"clusters {pipeline.build_clusters(src)}, missions {pipeline.build_missions(src)}, "
+                f"aggregates {pipeline.build_aggregates(src)}")
         task.status = OpsTask.OK
         log("done")
     except Exception as e:
@@ -56,6 +60,12 @@ def run_task(task: OpsTask):
     task.save(update_fields=["status", "finished_at", "log", "upload"])
     WorkerState.objects.filter(pk=1).update(current="")
     return task.status
+
+
+def queue_refresh(user=None):
+    """Queue one refresh after review decisions; several quick decisions share one queued task."""
+    if not OpsTask.objects.filter(kind=OpsTask.REFRESH, status=OpsTask.QUEUED).exists():
+        OpsTask.objects.create(kind=OpsTask.REFRESH, requested_by=user)
 
 
 def recover_interrupted():

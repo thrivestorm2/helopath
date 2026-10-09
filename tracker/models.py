@@ -290,11 +290,13 @@ class OpsTask(models.Model):
     """A chore queued from the Operations page and run by the background worker."""
 
     LOAD_REGISTRY, SEED_SITES, BACKFILL, REBUILD = "load_registry", "seed_sites", "backfill", "rebuild"
+    REFRESH = "refresh"  # queued by review decisions: missions, clusters and aggregates only
     KINDS = [
         (LOAD_REGISTRY, "Load FAA registry"),
         (SEED_SITES, "Seed FAA sites"),
         (BACKFILL, "Backfill 90 days"),
         (REBUILD, "Rebuild derived tables"),
+        (REFRESH, "Refresh after review"),
     ]
     QUEUED, RUNNING, OK, FAILED = "queued", "running", "ok", "failed"
 
