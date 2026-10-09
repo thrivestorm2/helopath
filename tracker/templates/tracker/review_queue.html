@@ -1,8 +1,11 @@
 {% extends "tracker/base.html" %}
 {% block content %}
-<h1>Review queue <span class="muted" style="font-size:14px">{{ queue|length }} discovered aircraft awaiting a decision</span></h1>
-{% for a in queue %}
-<div class="card review">
+<h1>Review queue <span class="muted" style="font-size:14px">{{ total }} discovered aircraft awaiting a decision</span></h1>
+<p class="muted">Confirm medical helicopters, reject the rest (police, news, tour, training, private). Unsure? Skip it; it stays here.
+Operator and base boxes suggest as you type; a new operator name is added automatically.</p>
+{% include "tracker/_pager.html" %}
+{% for a in page %}
+<div class="card review" id="a{{ a.pk }}">
   <div>
     <h2 style="margin-top:0"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></h2>
     <div><code>{{ a.icao_hex }}</code> · {{ a.make_model|default:"unknown type" }}</div>
@@ -18,21 +21,29 @@
     <strong>Inferred base:</strong> {% if a.inferred_base %}{{ a.inferred_base }}{% elif a.inferred_base_lat %}unmatched location {{ a.inferred_base_lat|floatformat:4 }}, {{ a.inferred_base_lon|floatformat:4 }} (see cluster queue){% else %}—{% endif %}
   </div>
   <div>
-    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:8px">{% csrf_token %}
+    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:10px">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
       <button class="primary" name="action" value="confirm">Confirm</button>
       <button class="danger" name="action" value="reject">Reject</button>
     </form>
-    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:8px">{% csrf_token %}
-      <select name="operator"><option value="">— operator —</option>{% for o in operators %}<option value="{{ o.pk }}" {% if a.operator_id == o.pk %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
-      <button name="action" value="operator">Assign</button>
+    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:10px">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}#a{{ a.pk }}">
+      <input name="operator_name" list="operator-options" placeholder="Operator" autocomplete="off"
+             value="{{ a.operator.name|default:'' }}" style="width:100%;max-width:240px">
+      <button name="action" value="operator">Save</button>
     </form>
     <form method="post" action="{% url 'review_action' a.pk %}">{% csrf_token %}
-      {% if a.inferred_base and not a.base %}<button name="action" value="accept_base">Accept inferred base</button><br>{% endif %}
-      <select name="base" style="max-width:220px"><option value="">— base —</option>{% for s in base_sites %}<option value="{{ s.pk }}" {% if a.base_id == s.pk %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
-      <button name="action" value="set_base">Set base</button>
+      <input type="hidden" name="next" value="{{ request.get_full_path }}#a{{ a.pk }}">
+      {% if a.inferred_base and not a.base %}<button name="action" value="accept_base" style="margin-bottom:6px">Accept inferred base</button><br>{% endif %}
+      <input name="base_label" list="site-options" placeholder="Base (type to search)" autocomplete="off"
+             value="{% for k, v in base_labels.items %}{% if k == a.pk %}{{ v }}{% endif %}{% endfor %}" style="width:100%;max-width:240px">
+      <button name="action" value="set_base">Save</button>
     </form>
-    {% if a.base %}<div class="muted">Base: {{ a.base }}</div>{% endif %}
   </div>
 </div>
 {% empty %}<p class="muted">Nothing to review.</p>{% endfor %}
+{% include "tracker/_pager.html" %}
+
+<datalist id="operator-options">{% for name in operator_options %}<option value="{{ name }}">{% endfor %}</datalist>
+<datalist id="site-options">{% for label in site_labels %}<option value="{{ label }}">{% endfor %}</datalist>
 {% endblock %}
