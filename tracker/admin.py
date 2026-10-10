@@ -153,7 +153,7 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
                        "discovery_rule")
     fieldsets = (
         (None, {"fields": ("tail_number", "icao_hex", "status", "origin")}),
-        ("Admin-owned", {"fields": ("call_sign", "operator", "program", "base", "active_from", "active_to", "notes")}),
+        ("Admin-owned", {"fields": ("call_sign", "call_sign_reviewed", "operator", "program", "program_reviewed", "base", "active_from", "active_to", "notes")}),
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
 

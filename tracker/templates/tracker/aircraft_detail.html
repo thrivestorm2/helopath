@@ -36,22 +36,29 @@
   <h2 style="margin-top:0">Look it up</h2>
   <p class="muted">Search for {{ aircraft.tail_number }} on (opens in a new tab):</p>
   <div class="lookup-links">{% for label, url in lookup_links %}<a class="button" href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ label }}</a>{% endfor %}</div>
-  {% if is_admin %}
+  {% if suggest_call_sign %}
   <h3>Suggested call sign</h3>
   {% for cs, n in call_sign_suggestions %}
   <form method="post" action="{% url 'aircraft_apply' aircraft.pk %}" class="suggestion">{% csrf_token %}
     <input type="hidden" name="field" value="call_sign"><input type="hidden" name="value" value="{{ cs }}">
-    <span><strong>{{ cs }}</strong> <span class="muted">· broadcast on {{ n }} leg{{ n|pluralize }}</span></span>
-    {% if cs == aircraft.call_sign %}<span class="badge confirmed">Current</span>{% else %}<button>Use</button>{% endif %}
+    <span><strong>{{ cs }}</strong> <span class="muted">· broadcast on {{ n }} leg{{ n|pluralize }}</span></span><button>Use</button>
   </form>
   {% empty %}<p class="muted">No flight IDs other than the tail number have been seen.</p>{% endfor %}
+  <form method="post" action="{% url 'aircraft_apply' aircraft.pk %}" class="dismiss">{% csrf_token %}
+    <input type="hidden" name="field" value="call_sign"><button name="action" value="dismiss" class="link" style="background:none;border:0;padding:6px 0 0;color:inherit;text-decoration:underline;cursor:pointer">Dismiss call sign suggestions</button></form>
+  {% endif %}
+  {% if suggest_program %}
   <h3>Suggested program</h3>
   {% for p, why in program_suggestions %}
   <form method="post" action="{% url 'aircraft_apply' aircraft.pk %}" class="suggestion">{% csrf_token %}
     <input type="hidden" name="field" value="program"><input type="hidden" name="value" value="{{ p.pk }}">
     <span><a href="{% url 'program_detail' p.pk %}">{{ p.name }}</a> <span class="muted">· {{ why }}</span></span><button>Use</button>
   </form>
-  {% empty %}<p class="muted">{% if aircraft.program %}No other programs at its base or operator.{% else %}No program yet among aircraft at its base or its operator's programs.{% endif %}</p>{% endfor %}
+  {% empty %}<p class="muted">No program yet among aircraft at its base or its operator's programs.</p>{% endfor %}
+  <form method="post" action="{% url 'aircraft_apply' aircraft.pk %}" class="dismiss">{% csrf_token %}
+    <input type="hidden" name="field" value="program"><button name="action" value="dismiss" class="link" style="background:none;border:0;padding:6px 0 0;color:inherit;text-decoration:underline;cursor:pointer">Dismiss program suggestions</button></form>
+  {% endif %}
+  {% if suggest_call_sign or suggest_program %}
   <p class="muted">Flight IDs are what the aircraft broadcasts; programs come from other aircraft at the same base and the
     operator's programs. Check before using; you can change either on the <a href="{% url 'admin:tracker_aircraft_change' aircraft.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a> page.</p>
   {% endif %}

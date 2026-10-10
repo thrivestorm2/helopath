@@ -112,6 +112,9 @@ class Aircraft(models.Model):
                   "number in parentheses.")
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL)
     program = models.ForeignKey(Program, null=True, blank=True, on_delete=models.SET_NULL, related_name="aircraft")
+    # Suggestions on the aircraft page stop once the value is set or an admin dismisses them.
+    call_sign_reviewed = models.BooleanField("call sign suggestions dismissed", default=False)
+    program_reviewed = models.BooleanField("program suggestions dismissed", default=False)
     base = models.ForeignKey(Site, null=True, blank=True, on_delete=models.SET_NULL, related_name="based_aircraft")
     active_from = models.DateField(null=True, blank=True)
     active_to = models.DateField(null=True, blank=True)
