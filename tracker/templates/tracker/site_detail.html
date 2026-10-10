@@ -10,25 +10,23 @@
 <div class="card" id="hangar">
   <h2 style="margin-top:0">Bad-weather hangar</h2>
   {% if site.weather_hangar_id == site.pk %}
-  <p>The {{ n_based }} aircraft based here {{ n_based|pluralize:"is,are" }} hangared at the base itself; there is no separate weather hangar.</p>
+  <p>Hangared at <a href="{% url 'site_detail' site.pk %}">{{ site.name }}</a> (the base itself).</p>
   {% elif site.weather_hangar %}
-  <p>The {{ n_based }} aircraft based here shelter at <a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>.
-    Flights to and from it count like flights from the base.</p>
-  {% else %}<p>No weather hangar set for the {{ n_based }} aircraft based here.</p>{% endif %}
-  {% if is_admin %}<div class="actions">
-    {% if site.weather_hangar_id != site.pk %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button>Hangar is at this base</button></form>{% endif %}
-    {% if site.weather_hangar %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<button>Clear</button></form>{% endif %}
-  </div>{% endif %}
+  <p><a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>
+    <span class="muted">· flights to and from it count like flights from the base</span></p>
+  {% else %}
+  <p>No weather hangar set for the {{ n_based }} aircraft based here.</p>
+  {% if is_admin %}<div class="actions"><form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button>Hangar is at this base</button></form></div>{% endif %}
   {% if hangar_suggestions %}
   <p class="muted">Airports where these aircraft started the day instead of here:</p>
   <table class="stack"><tr class="head"><th>Airport</th><th class="n">Days started there</th><th class="n">Aircraft</th>{% if is_admin %}<th></th>{% endif %}</tr>
   {% for s, days, n in hangar_suggestions %}
   <tr><td class="lead"><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a>{% if s.faa_id %} <span class="muted">{{ s.faa_id }}</span>{% endif %}</td>
     <td class="n" data-label="Days started there">{{ days }}</td><td class="n" data-label="Aircraft">{{ n }}</td>
-    {% if is_admin %}<td>{% if s.pk == site.weather_hangar_id %}<span class="badge confirmed">Current</span>{% else %}
-      <form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ s.pk }}"><button>Use as weather hangar</button></form>{% endif %}</td>{% endif %}</tr>
+    {% if is_admin %}<td><form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ s.pk }}"><button>Use as weather hangar</button></form></td>{% endif %}</tr>
   {% endfor %}</table>
-  {% elif not site.weather_hangar %}<p class="muted">No airport stands out yet as an overnight spot for them.{% if is_admin %} You can set one on the <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a> page.{% endif %}</p>{% endif %}
+  {% else %}<p class="muted">No airport stands out yet as an overnight spot for them.{% if is_admin %} You can set one on the <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a> page.{% endif %}</p>{% endif %}
+  {% endif %}
 </div>
 {% endif %}
 <h2>Arrivals by operator and month ({{ total }} total)</h2>
