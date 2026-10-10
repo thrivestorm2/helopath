@@ -2,7 +2,7 @@
 {% block content %}
 <h1>Review queue <span class="muted" style="font-size:14px">{{ total }} discovered aircraft awaiting a decision</span></h1>
 <p class="muted">Confirm medical helicopters, reject the rest (police, news, tour, training, private). Unsure? Skip it; it stays here.
-Operator and base boxes suggest as you type; a new operator name is added automatically.</p>
+Operator, program and base boxes suggest as you type; a new operator or program name is added automatically.</p>
 <details class="card" {% if not rules %}open{% endif %}>
   <summary><strong>Auto-confirm rules</strong> <span class="muted">({{ rules|length }} active)</span></summary>
   <p class="muted" style="margin:8px 0">Aircraft whose FAA registrant contains this text are confirmed automatically and
@@ -70,6 +70,12 @@ Operator and base boxes suggest as you type; a new operator name is added automa
              value="{{ a.operator.name|default:'' }}" style="width:100%;max-width:240px">
       <button name="action" value="operator">Save</button>
     </form>
+    <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:10px">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}#a{{ a.pk }}">
+      <input name="program_name" list="program-options" placeholder="Program (optional)" autocomplete="off"
+             value="{{ a.program.name|default:'' }}" style="width:100%;max-width:240px">
+      <button name="action" value="program">Save</button>
+    </form>
     <form method="post" action="{% url 'review_action' a.pk %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.get_full_path }}#a{{ a.pk }}">
       {% if a.inferred_base and not a.base %}<button name="action" value="accept_base" style="margin-bottom:6px">Accept inferred base</button><br>{% endif %}
@@ -83,5 +89,6 @@ Operator and base boxes suggest as you type; a new operator name is added automa
 {% include "tracker/_pager.html" %}
 
 <datalist id="operator-options">{% for name in operator_options %}<option value="{{ name }}">{% endfor %}</datalist>
+<datalist id="program-options">{% for name in program_options %}<option value="{{ name }}">{% endfor %}</datalist>
 <datalist id="site-options">{% for label in site_labels %}<option value="{{ label }}">{% endfor %}</datalist>
 {% endblock %}

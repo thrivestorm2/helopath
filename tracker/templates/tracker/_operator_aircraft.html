@@ -1,0 +1,7 @@
+<table class="stack"><tr class="head"><th>Tail</th><th>Make / model</th><th>Base</th><th>Status</th></tr>
+  {% for a in aircraft %}
+  <tr data-href="{% url 'aircraft_detail' a.pk %}"><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td><td data-label="Make / model">{{ a.make_model|default:"—" }}</td>
+    <td data-label="Base">{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
+    <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td></tr>
+  {% empty %}<tr><td colspan="4" class="muted empty-row">No {% if confirmed_only %}confirmed {% endif %}aircraft {% if program %}in this program{% else %}assigned to this operator{% endif %}.</td></tr>{% endfor %}
+</table>

@@ -1,12 +1,13 @@
 from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
+from django.db.models import Count
 from django.urls import reverse
 from django.utils.html import format_html
 from import_export import fields, resources
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 
-from .models import Aircraft, AutoConfirmRule, Operator, Site
+from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
 
 admin.site.site_header = "Air Medical Tracker admin"
 admin.site.site_title = "Air Medical Tracker"
@@ -23,12 +24,13 @@ class SiteResource(resources.ModelResource):
 class AircraftResource(resources.ModelResource):
     operator = fields.Field(attribute="operator", column_name="operator",
                             widget=ForeignKeyWidget(Operator, field="name"))
+    program = fields.Field(attribute="program", column_name="program", widget=ForeignKeyWidget(Program, field="name"))
     base = fields.Field(attribute="base", column_name="base_site_id", widget=ForeignKeyWidget(Site))
 
     class Meta:
         model = Aircraft
         import_id_fields = ("tail_number",)
-        fields = ("tail_number", "icao_hex", "status", "origin", "operator", "program_name", "base",
+        fields = ("tail_number", "icao_hex", "status", "origin", "operator", "program", "base",
                   "active_from", "active_to", "notes")
 
     def before_save_instance(self, instance, row, **kwargs):
@@ -88,21 +90,39 @@ class OperatorAdmin(ImportExportModelAdmin):
         return False
 
 
+@admin.register(Program)
+class ProgramAdmin(ImportExportModelAdmin):
+    list_display = ("name", "operator", "aircraft_count")
+    list_filter = ("operator",)
+    search_fields = ("name", "operator__name")
+    autocomplete_fields = ("operator",)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(n_aircraft=Count("aircraft"))
+
+    @admin.display(description="Aircraft", ordering="n_aircraft")
+    def aircraft_count(self, obj):
+        return obj.n_aircraft
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Aircraft)
 class AircraftAdmin(ImportExportModelAdmin):
     resource_classes = [AircraftResource]
     list_display = ("tail_number", "icao_hex", "status", "origin", "operator", "base", "inferred_base",
                     "qualifying_visits", "last_seen")
-    list_filter = ("status", "origin", "operator")
-    search_fields = ("tail_number", "icao_hex", "program_name")
-    autocomplete_fields = ("operator", "base")
+    list_filter = ("status", "origin", "operator", "program")
+    search_fields = ("tail_number", "icao_hex", "program__name")
+    autocomplete_fields = ("operator", "program", "base")
     readonly_fields = ("inferred_base", "inferred_base_lat", "inferred_base_lon", "make_model", "registrant_hint",
                        "callsign_hint", "operator_hint", "top_hospitals_hint", "qualifying_visits",
                        "distinct_hospitals", "first_seen", "last_seen", "discovered_at", "discovery_source",
                        "discovery_rule")
     fieldsets = (
         (None, {"fields": ("tail_number", "icao_hex", "status", "origin")}),
-        ("Admin-owned", {"fields": ("operator", "program_name", "base", "active_from", "active_to", "notes")}),
+        ("Admin-owned", {"fields": ("operator", "program", "base", "active_from", "active_to", "notes")}),
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
 

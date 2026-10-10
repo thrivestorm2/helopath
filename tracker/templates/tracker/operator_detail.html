@@ -6,14 +6,13 @@
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
 
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
-<div class="card"><h2 style="margin-top:0">Aircraft</h2>
-  <table class="stack"><tr class="head"><th>Tail</th><th>Make / model</th><th>Base</th><th>Status</th></tr>
-  {% for a in aircraft %}
-  <tr data-href="{% url 'aircraft_detail' a.pk %}"><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td><td data-label="Make / model">{{ a.make_model|default:"—" }}</td>
-    <td data-label="Base">{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
-    <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td></tr>
-  {% empty %}<tr><td colspan="4" class="muted empty-row">No {% if confirmed_only %}confirmed {% endif %}aircraft assigned to this operator.</td></tr>{% endfor %}
-  </table></div>
+<div class="card"><h2 style="margin-top:0">Aircraft{% if program_groups %} by program{% endif %}</h2>
+  {% if program_groups %}{% for program, members in program_groups %}
+  <h3 class="program-group">{% if program %}<a href="{% url 'program_detail' program.pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.name }}</a>{% else %}<span class="muted">No program</span>{% endif %}
+    <span class="muted">· {{ members|length }} aircraft</span></h3>
+  {% include "tracker/_operator_aircraft.html" with aircraft=members %}
+  {% endfor %}{% else %}{% include "tracker/_operator_aircraft.html" %}{% endif %}
+</div>
 <div class="card"><h2 style="margin-top:0">Bases</h2>
   <table><tr><th>Base</th><th class="n">Missions</th></tr>
   {% for pk, name, n in bases %}<tr data-href="{% url 'site_detail' pk %}"><td><a href="{% url 'site_detail' pk %}">{{ name }}</a></td><td class="n">{{ n|intcomma }}</td></tr>
