@@ -5,7 +5,8 @@
 <div class="grid">
   <div class="card stat headline"><div class="k">Resolved-landing rate (90 days)</div>
     <div class="v">{% if rate is not None %}{% widthratio resolved total 100 %}%{% else %}—{% endif %}</div>
-    <div class="muted">{{ resolved|intcomma }} / {{ total|intcomma }} legs</div></div>
+    <div class="muted">{{ resolved|intcomma }} / {{ total|intcomma }} legs</div>
+    <div><a href="{% url 'unresolved' %}{% if confirmed_only %}?confirmed=1{% endif %}">Why not higher? →</a></div></div>
   {% for label, n, share in by_state %}
   <div class="card stat"><div class="k">{{ label }}</div><div class="v">{% widthratio share 1 100 %}%</div><div class="muted">{{ n|intcomma }} legs</div></div>
   {% endfor %}

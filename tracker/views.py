@@ -10,7 +10,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -38,7 +38,8 @@ from .models import (
 )
 from .operators import absorb_operator
 from .ops import queue_refresh
-from .rebuild_flag import flag_rebuild, rebuild_queued
+from .resolution import CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, radius_suggestions
+from .rebuild_flag import flag_rebuild, rebuild_active, rebuild_progress, rebuild_queued
 from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
 
@@ -533,6 +534,72 @@ def _state_shares(groups):
     return sorted(rows, key=lambda r: -r[1])
 
 
+def unresolved(request):
+    """Why legs are not resolved to a site (90 days), with the fixes that would raise the rate."""
+    d = diagnose(medical_legs(request, days=90), SOURCE)
+    bases = []
+    if d.bases:
+        found = Aircraft.objects.in_bulk(list(d.bases))
+        for pk, n in sorted(d.bases.items(), key=lambda kv: -kv[1])[:25]:
+            a = found[pk]
+            add = reverse("admin:tracker_site_add") + "?" + urlencode({
+                "name": f"{a.program or a.operator or a.display_name} base", "site_type": Site.BASE,
+                "lat": f"{a.inferred_base_lat:.6f}", "lon": f"{a.inferred_base_lon:.6f}",
+                "radius_m": 300, "origin": "manual"})
+            bases.append((a, n, add))
+    # Every unresolved leg, filterable and sortable by category (and date, aircraft, distance, height).
+    category = request.GET.get("cat", "")
+    rows = [r for r in d.rows if not category or r.category == category]
+    sorters = {
+        "category": lambda r: (CATEGORY_ORDER[r.category], -r.end_ts.timestamp()),
+        "date": lambda r: r.end_ts.timestamp(),
+        "aircraft": lambda r: (r.aircraft_id or 0, -r.end_ts.timestamp()),
+        "nearest": lambda r: (r.nearest_m is None, r.nearest_m or 0),
+        "height": lambda r: (r.agl_ft is None, r.agl_ft or 0),
+    }
+    sort = request.GET.get("sort", "-date")
+    key = sort.lstrip("-")
+    if key not in sorters:
+        sort, key = "-date", "date"
+    rows.sort(key=sorters[key], reverse=sort.startswith("-"))
+    page = Paginator(rows, 50).get_page(request.GET.get("page"))
+    names = Aircraft.objects.in_bulk({r.aircraft_id for r in page if r.aircraft_id})
+    for r in page:
+        r.aircraft = names.get(r.aircraft_id)
+    metrics = category_metrics(d)
+    operators = Operator.objects.in_bulk({m["top_operator_id"] for m in metrics if m["top_operator_id"]})
+    for m in metrics:
+        m["top_operator"] = operators.get(m["top_operator_id"])
+    return render(request, "tracker/unresolved.html", {
+        "d": d, "metrics": metrics, "bases": bases, "radius_rows": radius_suggestions(d),
+        "page": page, "cat": category, "sort": sort, "categories": list(CATEGORY_TITLES.items()),
+        "cat_title": CATEGORY_TITLES.get(category, ""), "filter_qs": _filter_qs(request),
+        "spots": [(c, n) for c, n in d.spots.most_common(15)],
+        "confirmed_only": _confirmed_only(request),
+    })
+
+
+@require_POST
+@admin_required
+def set_site_radius(request, pk):
+    """One-tap "widen radius" from the unresolved-legs page; takes effect after a rebuild."""
+    site = get_object_or_404(Site, pk=pk)
+    try:
+        radius = int(request.POST["radius_m"])
+    except (KeyError, ValueError):
+        radius = 0
+    if not 25 <= radius <= 3000:
+        messages.error(request, "Radius must be between 25 and 3,000 m.")
+    else:
+        old = site.radius_m
+        site.radius_m = radius
+        site.save(update_fields=["radius_m", "updated"])
+        _log(request.user, site, f"Radius {old} m -> {radius} m (unresolved legs page)")
+        flag_rebuild(f"radius of {site.name}")
+        messages.success(request, f"{site.name}: radius {old} m → {radius} m. Takes effect after the rebuild.")
+    return redirect(reverse("unresolved") + "#radius")
+
+
 def quality(request):
     legs = medical_legs(request, days=90)
     by_state = Counter(legs.values_list("end_state", flat=True))
@@ -729,11 +796,21 @@ def cluster_dismiss(request, pk):
 
 
 @admin_required
+def rebuild_status(request):
+    """For the progress banner: {"active": bool, "step": what the rebuild is doing}."""
+    step = rebuild_progress()
+    return JsonResponse({"active": step is not None, "step": step or ""})
+
+
+@admin_required
 def queue_rebuild(request):
     if request.method == "POST":
-        RebuildRequest.objects.create(source=request.POST.get("source", SOURCE), requested_by=request.user)
+        if rebuild_active():  # a second click, or another admin got there first
+            messages.info(request, "A rebuild is already queued or running; the banner shows its progress.")
+        else:
+            RebuildRequest.objects.create(source=request.POST.get("source", SOURCE), requested_by=request.user)
+            messages.success(request, "Rebuild queued; the background worker starts it within a minute.")
         rebuild_queued()
-        messages.success(request, "Rebuild queued; the background worker starts it within a minute.")
         nxt = request.POST.get("next", "")
         safe = nxt.startswith("/") and url_has_allowed_host_and_scheme(nxt, {request.get_host()}, request.is_secure())
         return redirect(nxt if safe else "dashboard")
@@ -754,7 +831,8 @@ def operations(request):
         kind = request.POST.get("kind")
         if kind not in dict(OpsTask.KINDS):
             messages.error(request, "Unknown task.")
-        elif OpsTask.objects.filter(kind=kind, status__in=[OpsTask.QUEUED, OpsTask.RUNNING]).exists():
+        elif (OpsTask.objects.filter(kind=kind, status__in=[OpsTask.QUEUED, OpsTask.RUNNING]).exists()
+              or (kind == OpsTask.REBUILD and rebuild_active())):
             messages.warning(request, "That task is already queued or running.")
         else:
             upload = request.FILES.get("upload")

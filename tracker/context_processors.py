@@ -7,5 +7,5 @@ def roles(request):
 
 
 def _rebuild_banner():
-    from .rebuild_flag import banner_reason
-    return banner_reason()
+    from .rebuild_flag import banner
+    return banner()
