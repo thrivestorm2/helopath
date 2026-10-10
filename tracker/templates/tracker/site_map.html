@@ -9,6 +9,9 @@
     <span class="pin {{ kind }}" aria-hidden="true"></span> {% if kind == "base" %}Bases{% elif kind == "hospital" %}Hospitals{% else %}Hangars{% endif %}
     <span class="muted">({{ n }})</span></label>
   {% endfor %}
+  <label class="map-toggle" title="Where ADS-B positions were received in the last {{ coverage_days }} days">
+    <input type="checkbox" name="show" value="coverage" {% if "coverage" in shown %}checked{% endif %}>
+    <span class="coverage-key" aria-hidden="true"></span> Coverage</label>
   <select name="operator" onchange="this.form.submit()" aria-label="Operator">
     <option value="">All operators</option>
     {% for o in operators %}<option value="{{ o.pk }}" {% if operator.pk == o.pk %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
@@ -22,6 +25,11 @@
   <noscript><button>Apply</button></noscript>
 </form>
 <div id="map" class="site-map"></div>
+<div id="coverage-legend" class="coverage-legend" hidden>
+  <strong>ADS-B coverage</strong> <span class="muted coverage-days"></span>
+  <div class="coverage-scale"><span>light</span><span class="coverage-key wide"></span><span>heavy</span></div>
+  <div class="muted">Legs received per ~5 km square. No colour: no positions received there (often just no flights).</div>
+</div>
 {{ markers|json_script:"map-markers" }}
 {% endblock %}
 {% block scripts %}
@@ -53,14 +61,43 @@
     }
     mk.addTo(layers[m.kind]);
   });
+  // Coverage: a grid of received-position squares, fetched the first time it is turned on.
+  layers.coverage = L.layerGroup();
+  const legend = document.getElementById('coverage-legend');
+  let coverageLoaded = false;
+  const colour = t => `hsl(${Math.round(120 * (1 - t))}, 85%, 45%)`;  // green (light) to red (heavy)
+  const loadCoverage = () => {
+    if (coverageLoaded) return;
+    coverageLoaded = true;
+    const canvas = L.canvas({padding: 0.5});
+    fetch('{% url "coverage_data" %}', {credentials: 'same-origin'}).then(r => r.json()).then(d => {
+      legend.querySelector('.coverage-days').textContent = `(last ${d.days} days)`;
+      if (!d.cells.length) {
+        legend.querySelector('.coverage-days').textContent = '(not built yet: it is computed with the nightly update)';
+        return;
+      }
+      const top = Math.log1p(Math.max(d.top, 1));
+      d.cells.forEach(([i, j, n, low]) => {
+        const t = Math.min(1, Math.log1p(n) / top);
+        const sw = [i * d.size, j * d.size], ne = [(i + 1) * d.size, (j + 1) * d.size];
+        L.rectangle([sw, ne], {renderer: canvas, stroke: false, fillColor: colour(t), fillOpacity: 0.45})
+          .bindTooltip(`${n.toLocaleString()} leg${n === 1 ? '' : 's'} received here` +
+                       (low !== null ? `<br>lowest position ${low.toLocaleString()} ft` : ''), {sticky: true})
+          .addTo(layers.coverage);
+      });
+    });
+  };
   const boxes = document.querySelectorAll('.map-toggle input');
   const fit = () => {
     const b = L.latLngBounds([]);
-    Object.entries(layers).forEach(([k, g]) => { if (map.hasLayer(g) && g.getLayers().length) b.extend(g.getBounds()); });
+    Object.entries(layers).forEach(([k, g]) => { if (k !== 'coverage' && map.hasLayer(g) && g.getLayers().length) b.extend(g.getBounds()); });
     if (b.isValid()) map.fitBounds(b, {padding: [30, 30], maxZoom: 13});
   };
   const apply = refit => {
     boxes.forEach(cb => { cb.checked ? layers[cb.value].addTo(map) : map.removeLayer(layers[cb.value]); });
+    const cov = document.querySelector('.map-toggle input[value=coverage]').checked;
+    legend.hidden = !cov;
+    if (cov) loadCoverage();
     if (refit) fit();
     const url = new URL(window.location);
     url.searchParams.set('f', '1');
@@ -68,7 +105,7 @@
     boxes.forEach(cb => { if (cb.checked) url.searchParams.append('show', cb.value); });
     history.replaceState(null, '', url);
   };
-  boxes.forEach(cb => cb.addEventListener('change', () => apply(true)));
+  boxes.forEach(cb => cb.addEventListener('change', () => apply(cb.value !== 'coverage')));
   apply(false);
   fit();
   window.addEventListener('resize', () => { fitHeight(); map.invalidateSize(); });

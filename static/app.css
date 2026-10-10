@@ -68,6 +68,9 @@ tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
   .map-bar { gap: 6px 12px; padding: 8px 12px; }
   .map-bar select { flex: 1 1 40%; min-width: 0; max-width: none; }
   .map-toggle .muted { display: none; }
+  .coverage-legend { left: 8px; bottom: 24px; padding: 6px 8px; }
+  .coverage-legend > .muted { display: none; }  /* the scale is enough on a phone */
+  .coverage-key.wide { width: 80px; }
   main { padding: 12px; }
   h1 { font-size: 20px; }
   th, td { padding: 10px 8px; }
@@ -158,3 +161,11 @@ table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--car
 .pin.hangar { background:#e69500; transform:rotate(45deg); width:13px; height:13px; }
 .map-bar .pin { width:12px; height:12px; } .map-bar .pin.hangar { width:10px; height:10px; }
 .map-bar .pin.hospital::before { width:8px; height:2px; } .map-bar .pin.hospital::after { width:2px; height:8px; }
+.coverage-key { display:inline-block; width:16px; height:12px; border-radius:2px; vertical-align:middle;
+  background:linear-gradient(90deg, hsl(120,85%,45%), hsl(60,85%,45%), hsl(0,85%,45%)); opacity:.8; }
+.coverage-key.wide { width:120px; }
+.coverage-legend { position:absolute; z-index:1000; left:12px; bottom:28px; max-width:260px; background:rgba(255,255,255,.94);
+  border-radius:8px; padding:8px 10px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+.coverage-legend[hidden] { display:none; }
+.coverage-scale { display:flex; align-items:center; gap:6px; margin:4px 0; }
+main.full { position:relative; }

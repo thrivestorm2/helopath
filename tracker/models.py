@@ -293,6 +293,19 @@ class DismissedClusterMemory(models.Model):
     dismissed_at = models.DateTimeField(auto_now_add=True)
 
 
+class CoverageCell(models.Model):
+    """One grid cell where ADS-B positions were received (derived; rebuilt nightly by the pipeline)."""
+
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, db_index=True)
+    lat_i = models.IntegerField(help_text="floor(lat / cell size)")
+    lon_i = models.IntegerField(help_text="floor(lon / cell size)")
+    legs = models.PositiveIntegerField(help_text="Legs received in this cell")
+    lowest_ft = models.FloatField(null=True, blank=True, help_text="Lowest altitude received here (feet, MSL)")
+
+    class Meta:
+        unique_together = [("source", "lat_i", "lon_i")]
+
+
 class MonthlyAggregate(models.Model):
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, db_index=True)
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
