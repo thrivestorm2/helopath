@@ -411,15 +411,23 @@ def cluster_queue(request):
     clusters = list(LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site"))
     known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
     busy = dj_settings.PLACE_LOOKUP_MIN_LANDINGS
+    def add_site_url(c, name, city="", state="", site_type=Site.BASE):
+        return reverse("admin:tracker_site_add") + "?" + urlencode({
+            "lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
+            "site_type": site_type, "name": name, "city": city, "state": state})
+
     for c in clusters:
         c.lookup_wanted = c.landing_count > busy
         c.suggestion = known.get(places.location_key(c.lat, c.lon)) if c.lookup_wanted else None
-        named = c.suggestion is not None and bool(c.suggestion.name)
-        c.create_url = reverse("admin:tracker_site_add") + "?" + urlencode({
-            "lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
-            "site_type": Site.HOSPITAL if named and places.looks_like_hospital(c.suggestion) else Site.BASE,
-            "name": c.suggestion.name if named else f"Cluster {c.lat:.4f},{c.lon:.4f}",
-        })
+        if c.suggestion is not None and c.suggestion.name:
+            # Choosing a suggested hospital or helipad makes the new site a hospital helipad.
+            s = c.suggestion
+            c.create_url = add_site_url(c, s.name, s.city, s.state, Site.HOSPITAL)
+            c.alternatives = [(cand, add_site_url(c, cand["name"], cand.get("city", ""), cand.get("state", ""),
+                                                  Site.HOSPITAL)) for cand in s.candidates[1:]]
+        else:
+            c.create_url = add_site_url(c, f"Cluster {c.lat:.4f},{c.lon:.4f}")
+            c.alternatives = []
     return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy})
 
 

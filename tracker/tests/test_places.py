@@ -19,7 +19,12 @@ REPLY = {"elements": [
     {"type": "node", "id": 222, "lat": 40.6917, "lon": -89.5932, "tags": {"aeroway": "helipad", "name": "OSF Helipad"}},
     {"type": "node", "id": 333, "lat": 40.6918, "lon": -89.5933, "tags": {"aeroway": "helipad"}},  # unnamed: skipped
     {"type": "way", "id": 444, "center": {"lat": 40.6950, "lon": -89.5900},
-     "tags": {"healthcare": "hospital", "name": "Children's Hospital of Illinois"}},
+     "tags": {"healthcare": "hospital", "name": "Children's Hospital of Illinois",
+              "addr:city": "West Peoria", "addr:state": "IL"}},
+    # Administrative areas containing the point (from the is_in part of the query).
+    {"type": "area", "id": 3600122586, "tags": {"boundary": "administrative", "admin_level": "4",
+                                                "name": "Illinois", "ISO3166-2": "US-IL"}},
+    {"type": "area", "id": 3600123456, "tags": {"boundary": "administrative", "admin_level": "8", "name": "Peoria"}},
 ]}
 
 
@@ -45,10 +50,22 @@ class PlaceLookupTests(TestCase):
         self.assertEqual(ranked[0]["osm_url"], "https://www.openstreetmap.org/way/111")
         self.assertLess(ranked[0]["distance_m"], 150)
 
-    def test_query_covers_hospitals_and_helipads_within_radius(self):
+    def test_query_covers_hospitals_helipads_and_containing_city_state(self):
         q = places.overpass_query(LAT, LON, 500)
-        for part in ["[amenity=hospital]", "[healthcare=hospital]", "[aeroway=helipad]", "around:500,40.691600"]:
+        for part in ["[amenity=hospital]", "[healthcare=hospital]", "[aeroway=helipad]", "around:500,40.691600",
+                     "is_in(40.691600,-89.593100)", 'admin_level~"^(4|8)$"']:
             self.assertIn(part, q)
+
+    def test_city_and_state(self):
+        ranked = {c["name"]: c for c in places.rank(REPLY["elements"], LAT, LON)}
+        # Area containing the cluster when the feature has no address of its own ...
+        self.assertEqual((ranked["OSF Saint Francis Medical Center"]["city"],
+                          ranked["OSF Saint Francis Medical Center"]["state"]), ("Peoria", "IL"))
+        # ... and the feature's own address when it has one.
+        self.assertEqual((ranked["Children's Hospital of Illinois"]["city"],
+                          ranked["Children's Hospital of Illinois"]["state"]), ("West Peoria", "IL"))
+        for value, code in [("IL", "IL"), ("US-MO", "MO"), ("Indiana", "IN"), ("wisconsin", "WI"), ("Nowhere", "")]:
+            self.assertEqual(places.state_code(value), code, value)
 
     def test_only_busy_clusters_are_looked_up_and_answers_are_cached(self):
         busy, quiet, exactly = cluster(25), cluster(8, lat=41.0), cluster(20, lat=41.5)
@@ -56,7 +73,7 @@ class PlaceLookupTests(TestCase):
         self.assertEqual(places.suggest_pending(fetch=fake(calls=calls)), 1)
         self.assertEqual(len(calls), 1)  # only the cluster with MORE than 20 landings
         s = places.cached(busy.lat, busy.lon)
-        self.assertEqual((s.name, s.kind), ("OSF Saint Francis Medical Center", "hospital"))
+        self.assertEqual((s.name, s.kind, s.city, s.state), ("OSF Saint Francis Medical Center", "hospital", "Peoria", "IL"))
         # Rebuilt clusters at (nearly) the same spot reuse the cached answer.
         busy.delete()
         cluster(30, lat=LAT + 0.0002, lon=LON - 0.0002)
@@ -108,16 +125,30 @@ class ClusterQueueSuggestionTests(TestCase):
         places.suggest_pending(fetch=fake())
         r = self.client.get(reverse("cluster_queue"))
         self.assertContains(r, "<strong>OSF Saint Francis Medical Center</strong>")
+        self.assertContains(r, "Peoria, IL")
         self.assertContains(r, "2 other nearby")
         self.assertContains(r, "OpenStreetMap contributors")
-        url = r.context["clusters"][0].create_url
-        q = parse_qs(urlparse(url).query)
-        self.assertEqual(q["name"], ["OSF Saint Francis Medical Center"])
-        self.assertEqual(q["site_type"], [Site.HOSPITAL])
-        self.assertEqual(q["origin"], ["from_cluster"])
+        c = r.context["clusters"][0]
+        q = parse_qs(urlparse(c.create_url).query)
+        self.assertEqual({k: q[k] for k in ["name", "city", "state", "site_type", "origin"]}, {
+            "name": ["OSF Saint Francis Medical Center"], "city": ["Peoria"], "state": ["IL"],
+            "site_type": [Site.HOSPITAL], "origin": ["from_cluster"]})
         # The admin add form picks the values up as initial data.
-        form = self.client.get(url)
+        form = self.client.get(c.create_url)
         self.assertContains(form, 'value="OSF Saint Francis Medical Center"')
+        self.assertContains(form, 'value="Peoria"')
+        self.assertContains(form, '<option value="hospital_helipad" selected>')
+
+    def test_choosing_an_alternative_also_makes_a_hospital_helipad(self):
+        cluster(25)
+        places.suggest_pending(fetch=fake())
+        r = self.client.get(reverse("cluster_queue"))
+        alternatives = {cand["name"]: parse_qs(urlparse(url).query) for cand, url in r.context["clusters"][0].alternatives}
+        self.assertEqual(set(alternatives), {"Children's Hospital of Illinois", "OSF Helipad"})
+        helipad = alternatives["OSF Helipad"]  # a helipad, not a hospital, still becomes a hospital helipad
+        self.assertEqual((helipad["site_type"], helipad["city"], helipad["state"]), ([Site.HOSPITAL], ["Peoria"], ["IL"]))
+        self.assertEqual(alternatives["Children's Hospital of Illinois"]["city"], ["West Peoria"])
+        self.assertContains(r, ">Use</a>", count=2)
 
     def test_pending_and_small_clusters(self):
         cluster(25)
@@ -127,3 +158,4 @@ class ClusterQueueSuggestionTests(TestCase):
         small = [c for c in r.context["clusters"] if c.landing_count == 5][0]
         q = parse_qs(urlparse(small.create_url).query)
         self.assertEqual((q["site_type"], q["name"]), ([Site.BASE], ["Cluster 41.0000,-89.5931"]))
+        self.assertNotIn("city", q)  # nothing to fill in without a suggestion

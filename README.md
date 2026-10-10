@@ -117,8 +117,9 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   sample, 26 gaps were rejoined (signal-lost legs 485 → 459); every join matched cruise speed within ~8%.
 - Busy landing clusters (more than 20 landings) get name suggestions from OpenStreetMap: the worker asks the
   Overpass API for named hospitals and helipads within 500 m, a few per idle tick, caches answers by ~100 m
-  location, and retries failures after an hour. The Cluster queue shows the best match and pre-fills Create
-  site with it (type Hospital helipad when it is a hospital). Suggestions only; an admin creates the site.
+  location, and retries failures after an hour. The Cluster queue shows the best match; Create site (or Use on
+  another nearby match) pre-fills its name, city and state (the feature's address, else the city and state
+  containing the cluster) as a Hospital helipad. Suggestions only; an admin creates the site.
 - A leg that ends in `signal_lost` is bridged to the next leg's departure (within 2 h), so a hospital landing
   below coverage still counts if the aircraft is seen lifting off from that pad.
 - Confirm/reject refreshes missions and aggregates immediately; site edits need a rebuild (queued button,
