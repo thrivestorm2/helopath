@@ -63,3 +63,17 @@ class SiteIndex:
             if d <= s.radius_m:
                 return d, s
         return None
+
+
+def bearing_deg(lat1, lon1, lat2, lon2):
+    """Initial great-circle bearing from point 1 to point 2, degrees clockwise from north."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    x = math.sin(dl) * math.cos(p2)
+    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+
+def angle_diff_deg(a, b):
+    """Smallest absolute difference between two headings (0-180)."""
+    return abs((a - b + 180) % 360 - 180)

@@ -35,6 +35,16 @@
   {% block content %}{% endblock %}
 </main>
 {% include "tracker/_footer.html" %}
+<script>
+// Tap anywhere in a row that has data-href. Links, buttons and form controls inside keep their own behaviour;
+// Ctrl/Cmd-click opens a new tab like a normal link.
+document.addEventListener('click', function (e) {
+  var row = e.target.closest('tr[data-href]');
+  if (!row || e.target.closest('a, button, input, select, textarea, label, summary, form')) return;
+  if (window.getSelection && String(window.getSelection()).length) return;  // selecting text, not tapping
+  if (e.metaKey || e.ctrlKey) { window.open(row.dataset.href, '_blank'); } else { window.location.href = row.dataset.href; }
+});
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

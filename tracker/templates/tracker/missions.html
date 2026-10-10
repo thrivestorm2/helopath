@@ -8,18 +8,18 @@
   {% include "tracker/_confirmed_toggle.html" %}
   <button>Apply</button>
 </form>
-<div class="scroll"><table>
-<tr><th>Start</th><th>Aircraft</th><th>Operator</th><th>Label</th><th>Origin</th><th>Destination</th><th class="n">Confidence</th><th>Rule fired</th></tr>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Start</th><th>Aircraft</th><th>Operator</th><th>Label</th><th>Origin</th><th>Destination</th><th class="n">Confidence</th><th>Rule fired</th></tr>
 {% for m in page %}
-<tr>
-  <td>{{ m.start_ts|date:"Y-m-d H:i" }}</td>
-  <td><a href="{% url 'aircraft_detail' m.aircraft_id %}">{{ m.aircraft }}</a></td>
-  <td>{{ m.aircraft.operator|default:"—" }}</td>
-  <td>{{ m.get_label_display }}</td>
-  <td>{{ m.origin_site.name|default:"—" }}</td><td>{{ m.destination_site.name|default:"—" }}</td>
-  <td class="n">{{ m.confidence|floatformat:2 }}</td><td><code>{{ m.rule_fired }}</code></td>
+<tr data-href="{% url 'aircraft_detail' m.aircraft_id %}">
+  <td class="lead nowrap">{{ m.start_ts|date:"Y-m-d H:i" }}<span class="mobile-only"> · {{ m.get_label_display }}</span></td>
+  <td data-label="Aircraft"><a href="{% url 'aircraft_detail' m.aircraft_id %}">{{ m.aircraft }}</a></td>
+  <td data-label="Operator">{% if m.aircraft.operator %}<a href="{% url 'operator_detail' m.aircraft.operator_id %}">{{ m.aircraft.operator }}</a>{% else %}—{% endif %}</td>
+  <td class="desktop-only">{{ m.get_label_display }}</td>
+  <td data-label="Origin">{{ m.origin_site.name|default:"—" }}</td><td data-label="Destination">{{ m.destination_site.name|default:"—" }}</td>
+  <td class="n" data-label="Confidence">{{ m.confidence|floatformat:2 }}</td><td data-label="Rule"><code>{{ m.rule_fired }}</code></td>
 </tr>
-{% empty %}<tr><td colspan="8" class="muted">No missions.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="8" class="muted empty-row">No missions.</td></tr>{% endfor %}
 </table></div>
 {% include "tracker/_pager.html" %}
 {% endblock %}

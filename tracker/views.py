@@ -1,20 +1,24 @@
 import csv
 import re
+from urllib.parse import urlencode
 from collections import Counter, defaultdict
 from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .inference.pipeline import local_day
+from . import places
 from .models import (
     AutoConfirmRule,
+    PlaceSuggestion,
     Aircraft,
     DismissedClusterMemory,
     IngestRun,
@@ -85,17 +89,17 @@ def dashboard(request):
     missions_by_month = Counter(local_day(ts).strftime("%Y-%m") for ts in missions.values_list("start_ts", flat=True))
     months = sorted(set(legs_by_month) | set(missions_by_month))
     aggs = MonthlyAggregate.objects.filter(source=SOURCE, includes_unreviewed=not _confirmed_only(request))
-    by_operator = defaultdict(int)
+    by_operator = defaultdict(int)  # (pk, name) -> missions; pk None means unassigned
     by_base = defaultdict(int)
     for a in aggs.select_related("operator", "base"):
-        by_operator[a.operator.name if a.operator else "(unassigned)"] += a.count
-        by_base[a.base.name if a.base else "(no base)"] += a.count
+        by_operator[(a.operator_id, a.operator.name if a.operator else "(unassigned)")] += a.count
+        by_base[(a.base_id, a.base.name if a.base else "(no base)")] += a.count
     ok_runs = IngestRun.objects.filter(source=SOURCE, status=IngestRun.OK)
     return render(request, "tracker/dashboard.html", {
         "rate": rate, "resolved": resolved, "total": total,
         "months": [(m, legs_by_month[m], missions_by_month[m]) for m in months],
-        "by_operator": sorted(by_operator.items(), key=lambda kv: -kv[1]),
-        "by_base": sorted(by_base.items(), key=lambda kv: -kv[1]),
+        "by_operator": [(pk, name, n) for (pk, name), n in sorted(by_operator.items(), key=lambda kv: -kv[1])],
+        "by_base": [(pk, name, n) for (pk, name), n in sorted(by_base.items(), key=lambda kv: -kv[1])],
         "aircraft_by_status": dict(Aircraft.objects.values_list("status").annotate(n=Count("id"))),
         "days_ingested": ok_runs.values("day").distinct().count(),
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
@@ -165,6 +169,37 @@ def site_detail(request, pk):
         "site": site, "months": months,
         "rows": [(op, [c[m] for m in months], sum(c.values())) for op, c in sorted(table.items())],
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
+    })
+
+
+def operator_detail(request, pk):
+    operator = get_object_or_404(Operator, pk=pk)
+    aircraft = (Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
+                .select_related("base", "inferred_base").order_by("tail_number"))
+    aggs = MonthlyAggregate.objects.filter(source=SOURCE, operator=operator,
+                                           includes_unreviewed=not _confirmed_only(request))
+    labels = [code for code, _ in Mission.LABELS]
+    label_names = dict(Mission.LABELS)
+    per_month = defaultdict(Counter)
+    flows, bases = Counter(), Counter()
+    base_names = {}
+    for a in aggs.select_related("origin_site", "destination_site", "base"):
+        per_month[a.month][a.label] += a.count
+        if a.origin_site_id or a.destination_site_id:
+            flows[(a.origin_site, a.destination_site, label_names[a.label])] += a.count
+        if a.base_id:
+            bases[a.base_id] += a.count
+            base_names[a.base_id] = a.base.name
+    months = sorted(per_month, reverse=True)
+    return render(request, "tracker/operator_detail.html", {
+        "operator": operator,
+        "aircraft": aircraft,
+        "labels": Mission.LABELS,
+        "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
+        "total": sum(sum(c.values()) for c in per_month.values()),
+        "flows": flows.most_common(15),
+        "bases": [(pk, base_names[pk], n) for pk, n in bases.most_common()],
+        "confirmed_only": _confirmed_only(request),
     })
 
 
@@ -243,6 +278,7 @@ def quality(request):
         "per_base": _state_shares(per_base.items()), "per_site": _state_shares(per_site.items())[:100],
         "end_states": Leg.END_STATES, "zero_sites": zero.order_by("state", "name"),
         "unreviewed_sites": Site.objects.filter(is_active=True, reviewed=False).count(),
+        "gaps_rejoined": legs.aggregate(n=Sum("gaps_bridged"))["n"] or 0,
         "confirmed_only": _confirmed_only(request),
     })
 
@@ -370,8 +406,29 @@ def review_rules(request):
 
 @admin_required
 def cluster_queue(request):
-    clusters = LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site")
-    return render(request, "tracker/cluster_queue.html", {"clusters": clusters})
+    from django.conf import settings as dj_settings
+
+    clusters = list(LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site"))
+    known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
+    busy = dj_settings.PLACE_LOOKUP_MIN_LANDINGS
+    def add_site_url(c, name, city="", state="", site_type=Site.BASE):
+        return reverse("admin:tracker_site_add") + "?" + urlencode({
+            "lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
+            "site_type": site_type, "name": name, "city": city, "state": state})
+
+    for c in clusters:
+        c.lookup_wanted = c.landing_count > busy
+        c.suggestion = known.get(places.location_key(c.lat, c.lon)) if c.lookup_wanted else None
+        if c.suggestion is not None and c.suggestion.name:
+            # Choosing a suggested hospital or helipad makes the new site a hospital helipad.
+            s = c.suggestion
+            c.create_url = add_site_url(c, s.name, s.city, s.state, Site.HOSPITAL)
+            c.alternatives = [(cand, add_site_url(c, cand["name"], cand.get("city", ""), cand.get("state", ""),
+                                                  Site.HOSPITAL)) for cand in s.candidates[1:]]
+        else:
+            c.create_url = add_site_url(c, f"Cluster {c.lat:.4f},{c.lon:.4f}")
+            c.alternatives = []
+    return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy})
 
 
 @require_POST

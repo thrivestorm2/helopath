@@ -14,6 +14,7 @@ from django.utils import timezone
 from tracker.ingest import process_rebuild_requests, run_nightly, utc_today
 from tracker.models import OpsTask, RebuildRequest, WorkerState
 from tracker.ops import recover_interrupted, run_task
+from tracker.places import suggest_pending
 
 
 def tick(now=None, log=print):
@@ -41,7 +42,10 @@ def tick(now=None, log=print):
         run_nightly(log=log)
         WorkerState.objects.filter(pk=1).update(last_nightly=utc_today(), current="")
         return "nightly"
-    return "idle"
+
+    # Spare time: suggest names for busy landing clusters (a few OpenStreetMap lookups per tick).
+    looked_up = suggest_pending()
+    return f"idle (place lookups: {looked_up})" if looked_up else "idle"
 
 
 class Command(BaseCommand):
@@ -72,5 +76,5 @@ class Command(BaseCommand):
                 did = "error"
             if opts["once"]:
                 return
-            if did == "idle" or did == "error":
+            if did.startswith("idle") or did == "error":
                 time.sleep(30)
