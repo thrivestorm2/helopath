@@ -97,10 +97,9 @@ form.inline { display: inline; margin: 0; }
 button.link { background: none; border: 0; padding: 0; color: #1d4ed8; text-decoration: underline; cursor: pointer; font: inherit; }
 #patients h3 { font-size: 15px; margin: 14px 0 6px; }
 #patients th, #patients td { padding-left: 5px; padding-right: 5px; }
-#patients tr.name-row { display: none; }
-@media (max-width: 640px) {  /* phones: hospital name on its own line, numbers below, so 6 months fit */
-  #patients table { font-size: 13px; }
-  #patients tr.name-row { display: table-row; }
-  #patients tr.name-row td { border-bottom: 0; padding-bottom: 0; font-weight: 600; }
-  #patients .fac { display: none; }
-}
+/* Hospital flow tables: name pinned left and Avg pinned right; months and Total scroll between them. */
+table.flows { width: auto; min-width: 100%; }
+table.flows .fac { position: sticky; left: 0; z-index: 1; background: var(--card); min-width: 110px; max-width: 170px;
+  box-shadow: 6px 0 6px -6px rgba(0, 0, 0, .25); }
+table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--card); box-shadow: -6px 0 6px -6px rgba(0, 0, 0, .25); }
+@media (max-width: 640px) { table.flows { font-size: 13px; } table.flows .fac { max-width: 120px; } }

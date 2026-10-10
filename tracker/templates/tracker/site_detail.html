@@ -20,19 +20,9 @@
   <p><strong>{{ flows.received }}</strong> received <span class="muted">· {% if flows.from_scenes %}<a href="{{ flows.scene_map }}" class="map-link">{{ flows.from_scenes }} from scenes <span aria-hidden="true">⌖</span></a>{% else %}0 from scenes{% endif %} · {{ flows.from_hospitals }} from other hospitals</span>
     &nbsp; <strong>{{ flows.sent }}</strong> sent <span class="muted">· to other hospitals</span></p>
   <h3>Received from</h3>
-  <div class="scroll"><table>
-  <tr><th class="fac">From</th>{% for m in flows.months %}<th class="n" title="{{ m|date:'F Y' }}">{{ m|date:"M" }}</th>{% endfor %}<th class="n" title="Average per month over {{ flows.n_months }} month{{ flows.n_months|pluralize }}">Avg</th><th class="n">Total</th></tr>
-  {% for name, link, counts, avg, tot in flows.received_rows %}<tr class="name-row" data-href="{{ link }}"><td colspan="{{ flows.months|length|add:3 }}"><a href="{{ link }}">{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td></tr>
-  <tr data-href="{{ link }}"><td class="fac"><a href="{{ link }}"{% if name == "Scenes" %} class="map-link"{% endif %}>{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n">{{ avg|floatformat:1 }}</td><td class="n"><strong>{{ tot }}</strong></td></tr>
-  {% empty %}<tr><td class="muted">No patients received yet.</td></tr>{% endfor %}
-  </table></div>
+  {% include "tracker/_flow_table.html" with heading="From" rows=flows.received_rows months=flows.months n_months=flows.n_months empty_text="No patients received yet." %}
   <h3>Sent to</h3>
-  <div class="scroll"><table>
-  <tr><th class="fac">To</th>{% for m in flows.months %}<th class="n" title="{{ m|date:'F Y' }}">{{ m|date:"M" }}</th>{% endfor %}<th class="n" title="Average per month over {{ flows.n_months }} month{{ flows.n_months|pluralize }}">Avg</th><th class="n">Total</th></tr>
-  {% for name, link, counts, avg, tot in flows.sent_rows %}<tr class="name-row" data-href="{{ link }}"><td colspan="{{ flows.months|length|add:3 }}"><a href="{{ link }}">{{ name }}</a></td></tr>
-  <tr data-href="{{ link }}"><td class="fac"><a href="{{ link }}">{{ name }}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n">{{ avg|floatformat:1 }}</td><td class="n"><strong>{{ tot }}</strong></td></tr>
-  {% empty %}<tr><td class="muted">No transfers out yet.</td></tr>{% endfor %}
-  </table></div>
+  {% include "tracker/_flow_table.html" with heading="To" rows=flows.sent_rows months=flows.months n_months=flows.n_months empty_text="No transfers out yet." %}
   {% if flows.n_months > flows.months|length %}<p class="muted">Showing the latest {{ flows.months|length }} of {{ flows.n_months }} months; Avg (per month) and Total cover all {{ flows.n_months }}.</p>{% endif %}
   <p class="muted">Counted from inferred missions: a scene or another hospital followed by a landing here is a patient
     received; a landing here followed by another hospital is a patient sent.{% if flows.unresolved %}
@@ -48,6 +38,10 @@
 <div id="map" class="card" style="padding:0;margin-top:14px;height:360px"></div>
 {% endblock %}
 {% block scripts %}
+<script>
+// Flow tables open scrolled to the newest months (the name and Avg columns stay pinned).
+document.querySelectorAll('.flows-scroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
+</script>
 <script>
 const map = L.map('map', {zoomSnap: 0.25}).setView([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], 15);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);

@@ -46,7 +46,7 @@ class PatientFlowTests(TestCase):
         self.assertContains(r, ">Avg</th>")
         self.assertContains(r, '<th class="n" title="September 2026">Sep</th>')
         self.assertContains(r, f'<tr data-href="{b_link}"><td class="fac"><a href="{b_link}">Hospital B</a>')
-        self.assertContains(r, f'<tr class="name-row" data-href="{b_link}">')  # phones: name on its own line
+        self.assertContains(r, '<table class="flows">')  # name and Avg pinned; months scroll between them
         self.assertContains(r, "5 visits where the direction is unknown are not counted")
         flows = self.client.get(reverse("site_detail", args=[self.a.pk]) + "?confirmed=1").context["flows"]
         self.assertEqual((flows["received"], flows["sent"]), (1, 0))
@@ -81,4 +81,4 @@ class PatientFlowTests(TestCase):
         self.assertEqual((name, counts, tot), ("Hospital B", [3, 4, 5, 6, 7, 8], 36))
         self.assertEqual(avg, 36 / 8)  # all 8 months
         self.assertContains(r, "Showing the latest 6 of 8 months")
-        self.assertContains(r, "<td class=\"n\">4.5</td>")
+        self.assertContains(r, '<td class="n avg">4.5</td>')
