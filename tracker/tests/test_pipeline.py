@@ -145,6 +145,15 @@ class PipelineTests(TestCase):
         self.assertEqual(Aircraft.objects.count(), 1)
         self.assertFalse(MonthlyAggregate.objects.exists())
 
+    def test_rule_confirms_newly_discovered_aircraft(self):
+        from tracker.models import AutoConfirmRule
+
+        AutoConfirmRule.objects.create(registrant_contains="LIFE FLIGHT")
+        self._ingest_all()
+        self.assertEqual(Aircraft.objects.get().status, Aircraft.CONFIRMED)
+        # Discovery and the rule run before aggregates, so confirmed-only figures exist straight away.
+        self.assertEqual(sum(MonthlyAggregate.objects.filter(includes_unreviewed=False).values_list("count", flat=True)), 4)
+
     def test_confirmed_only_toggle(self):
         self._ingest_all()
         Aircraft.objects.update(status=Aircraft.CONFIRMED)

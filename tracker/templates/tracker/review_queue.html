@@ -3,6 +3,35 @@
 <h1>Review queue <span class="muted" style="font-size:14px">{{ total }} discovered aircraft awaiting a decision</span></h1>
 <p class="muted">Confirm medical helicopters, reject the rest (police, news, tour, training, private). Unsure? Skip it; it stays here.
 Operator and base boxes suggest as you type; a new operator name is added automatically.</p>
+<details class="card" {% if not rules %}open{% endif %}>
+  <summary><strong>Auto-confirm rules</strong> <span class="muted">({{ rules|length }} active)</span></summary>
+  <p class="muted" style="margin:8px 0">Aircraft whose FAA registrant contains this text are confirmed automatically and
+  given the rule's operator (when they have none), now and whenever new ones are discovered. Rules never undo a rejection.
+  You can also add a rule from any card with <em>Auto-confirm this registrant</em>.</p>
+  {% for r in rules %}
+  <form method="post" action="{% url 'review_rules' %}" class="filters" style="margin-bottom:6px">{% csrf_token %}
+    <input type="hidden" name="rule" value="{{ r.pk }}">
+    <span>Registrant contains <strong>{{ r.registrant_contains }}</strong>
+      → {% if r.operator %}{{ r.operator }}{% else %}<span class="badge discovered">no operator yet</span>{% endif %}
+      <span class="muted">· {{ r.confirmed_count }} confirmed</span></span>
+    {% if operators %}<select name="operator" aria-label="Operator for this rule">
+      <option value="">{% if r.operator %}Change operator…{% else %}Choose operator…{% endif %}</option>
+      {% for o in operators %}<option value="{{ o.pk }}">{{ o }}</option>{% endfor %}</select>
+    <button name="action" value="set_operator">Set</button>{% endif %}
+    <button name="action" value="off">Switch off</button>
+  </form>
+  {% endfor %}
+  {% if operators %}
+  <form method="post" action="{% url 'review_rules' %}" class="filters" style="margin-top:10px">{% csrf_token %}
+    <input name="registrant_contains" placeholder="Registrant contains, e.g. AIR METHODS" required minlength="4" style="max-width:260px;width:100%">
+    <select name="operator" required aria-label="Operator">
+      <option value="">Operator…</option>{% for o in operators %}<option value="{{ o.pk }}">{{ o }}</option>{% endfor %}</select>
+    <button class="primary" name="action" value="add">Add rule</button>
+  </form>
+  {% else %}
+  <p class="muted">To add rules, first create an operator: type its name in a card's Operator box and press Save.</p>
+  {% endif %}
+</details>
 {% include "tracker/_pager.html" %}
 {% for a in page %}
 <div class="card review" id="a{{ a.pk }}">
@@ -15,8 +44,17 @@ Operator and base boxes suggest as you type; a new operator name is added automa
   <div>
     <strong>Evidence:</strong> {{ a.qualifying_visits }} qualifying visits at {{ a.distinct_hospitals }} hospital(s)<br>
     <span class="muted">{{ a.discovery_rule }}</span><br>
-    <strong>Most visited:</strong> {{ a.top_hospitals_hint|default:"—" }}<br>
+    <strong>Most visited:</strong>{% for h in a.top_hospitals_list %}<br><span style="padding-left:1em">{{ h }}</span>{% empty %} —{% endfor %}<br>
     <strong>Registrant:</strong> {{ a.registrant_hint|default:"—" }}<br>
+    {% if a.registrant_hint and operators %}
+    <form method="post" action="{% url 'review_rules' %}" class="filters" style="margin:4px 0 8px">{% csrf_token %}
+      <input type="hidden" name="registrant_contains" value="{{ a.registrant_hint }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <select name="operator" required aria-label="Operator for registrant rule">
+        <option value="">Operator…</option>{% for o in operators %}<option value="{{ o.pk }}">{{ o }}</option>{% endfor %}</select>
+      <button name="action" value="add">Auto-confirm this registrant</button>
+    </form>
+    {% endif %}
     <strong>Callsigns:</strong> {{ a.callsign_hint|default:"—" }} · <strong>readsb operator:</strong> {{ a.operator_hint|default:"—" }}<br>
     <strong>Inferred base:</strong> {% if a.inferred_base %}{{ a.inferred_base }}{% elif a.inferred_base_lat %}unmatched location {{ a.inferred_base_lat|floatformat:4 }}, {{ a.inferred_base_lon|floatformat:4 }} (see cluster queue){% else %}—{% endif %}
   </div>

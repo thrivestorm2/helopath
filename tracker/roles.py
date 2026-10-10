@@ -4,7 +4,7 @@ from functools import wraps
 from django.core.exceptions import PermissionDenied
 
 VIEWER, ADMIN = "Viewer", "Admin"
-ADMIN_EDITABLE = ["site", "operator", "aircraft", "landingcluster"]
+ADMIN_EDITABLE = ["site", "operator", "aircraft", "landingcluster", "autoconfirmrule"]
 
 
 def ensure_groups(**kwargs):

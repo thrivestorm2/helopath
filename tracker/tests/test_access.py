@@ -95,6 +95,11 @@ class HealthCheckTests(TestCase):
             r = self.client.get("/healthz", HTTP_HOST="helopath.ondigitalocean.app")
             self.assertEqual(r.content, b"ok")
 
+    def test_local_development_by_loopback_ip_gets_real_pages(self):
+        with self.settings(ALLOWED_HOSTS=["127.0.0.1", "localhost"]):
+            r = self.client.get("/login/", HTTP_HOST="127.0.0.1:8000")
+            self.assertContains(r, "Log in")
+
     def test_real_hosts_still_validated_and_login_still_required(self):
         with self.settings(ALLOWED_HOSTS=["helopath.ondigitalocean.app"]):
             self.assertEqual(self.client.get("/login/", HTTP_HOST="evil.example").status_code, 400)

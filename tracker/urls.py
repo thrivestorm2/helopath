@@ -15,6 +15,7 @@ urlpatterns = [
     path("ingest/", views.ingest_log, name="ingest_log"),
     path("review/", views.review_queue, name="review_queue"),
     path("review/<int:pk>/", views.review_action, name="review_action"),
+    path("review/rules/", views.review_rules, name="review_rules"),
     path("clusters/", views.cluster_queue, name="cluster_queue"),
     path("clusters/<int:pk>/dismiss/", views.cluster_dismiss, name="cluster_dismiss"),
     path("rebuild/", views.queue_rebuild, name="queue_rebuild"),
