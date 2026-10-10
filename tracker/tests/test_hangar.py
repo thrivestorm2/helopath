@@ -160,7 +160,11 @@ class SiteHangarPageTests(TestCase):
         self.assertContains(r, reverse("queue_rebuild"))
         self.base.refresh_from_db()
         self.assertEqual(self.base.weather_hangar, self.airport)
-        self.assertContains(r, ">Current<")
+        # Once set, the card only names the hangar (with a link); changes are made on the admin Edit page.
+        self.assertContains(r, f'<a href="{reverse("site_detail", args=[self.airport.pk])}">Airport KPIA</a>')
+        for gone in ("Use as weather hangar", "Hangar is at this base</button>", "Clear</button>",
+                     "Days started there"):
+            self.assertNotContains(r, gone)
         self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": ""})
         self.base.refresh_from_db()
         self.assertIsNone(self.base.weather_hangar)
@@ -168,9 +172,10 @@ class SiteHangarPageTests(TestCase):
         self.base.refresh_from_db()
         self.assertEqual(self.base.weather_hangar, self.base)  # hangared at the base itself
         self.assertContains(r, "Weather hangar set to the base itself")
-        self.assertContains(r, "is hangared at the base itself")
+        self.assertContains(r, "(the base itself)")
         self.assertNotContains(r, "Use as weather hangar")  # no suggestions once settled
         self.assertNotContains(r, "Hangar is at this base</button>")
+        self.assertNotContains(r, "Clear</button>")
 
     def test_viewers_see_but_cannot_set(self):
         self.client.force_login(self.viewer)
