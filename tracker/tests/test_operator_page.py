@@ -125,6 +125,13 @@ class OperatorPageTests(TestCase):
         self.assertLess(body.index(a_link), body.index(b_link))  # busiest first
         self.assertNotIn('<div class="visit"><a href="' + reverse("site_detail", args=[self.base.pk]), body)
 
+    def test_admin_edit_page_lists_top_hospitals_one_per_line(self):
+        Aircraft.objects.filter(pk=self.a.pk).update(top_hospitals_hint="Hospital A (3); St. John's <B> (1)")
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        r = self.client.get(reverse("admin:tracker_aircraft_change", args=[self.a.pk]))
+        self.assertContains(r, "Hospital A (3)<br>St. John&#x27;s &lt;B&gt; (1)")  # one per line, escaped
+        self.assertContains(r, "Top hospitals")
+
     def test_login_required_and_404(self):
         self.assertEqual(self.client.get(reverse("operator_detail", args=[999])).status_code, 404)
         self.client.logout()
