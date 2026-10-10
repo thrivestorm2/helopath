@@ -27,8 +27,8 @@
   <td><code>{{ a.icao_hex }}</code></td>
   <td>{{ a.make_model }}</td>
   <td><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td>
-  <td>{{ a.operator|default:"—" }}</td>
-  <td>{% if a.base %}{{ a.base.name }}{% elif a.inferred_base %}{{ a.inferred_base.name }} <em class="inferred">inferred</em>{% elif a.inferred_base_lat %}<span class="muted">unmatched location</span> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
+  <td>{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
+  <td>{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% elif a.inferred_base_lat %}<span class="muted">unmatched location</span> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
   <td class="n">{{ a.qualifying_visits }}</td>
   <td>{{ a.first_seen|date:"Y-m-d" }}</td>
   <td>{{ a.last_seen|date:"Y-m-d" }}</td>

@@ -7,9 +7,9 @@
   <table>
     <tr><th>Hex</th><td><code>{{ aircraft.icao_hex }}</code></td></tr>
     <tr><th>Make / model</th><td>{{ aircraft.make_model|default:"—" }}</td></tr>
-    <tr><th>Operator</th><td>{{ aircraft.operator|default:"—" }}</td></tr>
+    <tr><th>Operator</th><td>{% if aircraft.operator %}<a href="{% url 'operator_detail' aircraft.operator_id %}">{{ aircraft.operator }}</a>{% else %}—{% endif %}</td></tr>
     <tr><th>Program</th><td>{{ aircraft.program_name|default:"—" }}</td></tr>
-    <tr><th>Base</th><td>{% if aircraft.base %}{{ aircraft.base }}{% elif aircraft.inferred_base %}{{ aircraft.inferred_base }} <em class="inferred">inferred</em>{% else %}—{% endif %}</td></tr>
+    <tr><th>Base</th><td>{% if aircraft.base %}<a href="{% url 'site_detail' aircraft.base_id %}">{{ aircraft.base }}</a>{% elif aircraft.inferred_base %}<a href="{% url 'site_detail' aircraft.inferred_base_id %}">{{ aircraft.inferred_base }}</a> <em class="inferred">inferred</em>{% else %}—{% endif %}</td></tr>
     <tr><th>Origin</th><td>{{ aircraft.get_origin_display }}</td></tr>
   </table>
 </div>
