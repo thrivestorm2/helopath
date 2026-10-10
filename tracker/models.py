@@ -367,7 +367,9 @@ class PlaceSuggestion(models.Model):
     kind = models.CharField(max_length=20, blank=True)   # "hospital" or "helipad"
     distance_m = models.PositiveIntegerField(null=True, blank=True)
     osm_url = models.URLField(blank=True)
-    candidates = models.JSONField(default=list)          # up to 5: [{name, kind, distance_m, osm_url}]
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=2, blank=True)
+    candidates = models.JSONField(default=list)          # up to 5: [{name, kind, distance_m, osm_url, city, state}]
     error = models.CharField(max_length=200, blank=True)  # set when the lookup failed (retried later)
     looked_up_at = models.DateTimeField(auto_now=True)
 
