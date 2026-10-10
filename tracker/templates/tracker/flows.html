@@ -15,7 +15,8 @@
 <tr><td class="lead nowrap">{{ r.month|date:"Y-m" }}<span class="mobile-only"> · {{ r.get_label_display }} · {{ r.count }}</span></td>
   <td data-label="Operator">{% if r.operator %}<a href="{% url 'operator_detail' r.operator_id %}">{{ r.operator }}</a>{% else %}(unassigned){% endif %}</td>
   <td data-label="Base">{% if r.base %}<a href="{% url 'site_detail' r.base_id %}">{{ r.base.name }}</a>{% else %}—{% endif %}</td>
-  <td data-label="Origin">{{ r.origin_site.name|default:"—" }}</td><td class="arrow">→</td><td data-label="Destination">{{ r.destination_site.name|default:"—" }}</td>
+  <td data-label="Origin">{% if r.origin_site %}{{ r.origin_site.name }}{% else %}<a href="{% url 'route_map' %}?origin={{ r.origin_site_id|default:'none' }}&amp;dest={{ r.destination_site_id|default:'none' }}&amp;label={{ r.label }}&amp;operator={{ r.operator_id|default:'none' }}&amp;base={{ r.base_id|default:'none' }}&amp;month={{ r.month|date:'Y-m' }}{% if confirmed_only %}&amp;confirmed=1{% endif %}" class="map-link">scene / unknown <span aria-hidden="true">⌖</span></a>{% endif %}</td><td class="arrow">→</td>
+  <td data-label="Destination">{% if r.destination_site %}{{ r.destination_site.name }}{% else %}<a href="{% url 'route_map' %}?origin={{ r.origin_site_id|default:'none' }}&amp;dest={{ r.destination_site_id|default:'none' }}&amp;label={{ r.label }}&amp;operator={{ r.operator_id|default:'none' }}&amp;base={{ r.base_id|default:'none' }}&amp;month={{ r.month|date:'Y-m' }}{% if confirmed_only %}&amp;confirmed=1{% endif %}" class="map-link">unknown <span aria-hidden="true">⌖</span></a>{% endif %}</td>
   <td class="desktop-only">{{ r.get_label_display }}</td><td class="n desktop-only">{{ r.count }}</td><td class="n" data-label="Mean confidence">{{ r.mean_confidence|floatformat:2 }}</td></tr>
 {% empty %}<tr><td colspan="9" class="muted empty-row">No aggregates yet.</td></tr>{% endfor %}
 </table></div>

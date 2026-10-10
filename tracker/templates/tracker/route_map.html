@@ -1,0 +1,42 @@
+{% extends "tracker/base.html" %}{% load humanize %}
+{% block content %}
+<h1>Scene / unknown landings</h1>
+<p class="muted">{{ label }} · {% if origin %}from <a href="{% url 'site_detail' origin.pk %}">{{ origin.name }}</a>{% else %}from a scene or unknown place{% endif %}
+  → {% if destination %}<a href="{% url 'site_detail' destination.pk %}">{{ destination.name }}</a>{% else %}unknown{% endif %}
+  {% for s in scope %}· {{ s }} {% endfor %}{% if month %}· {{ month }} {% endif %}{% if confirmed_only %}· confirmed aircraft only{% endif %}</p>
+<p>{{ n_points|intcomma }} landing{{ n_points|pluralize }} away from known sites in {{ n_missions|intcomma }} inferred mission{{ n_missions|pluralize }}.
+  {% if n_points > points|length %}Showing the first {{ points|length|intcomma }}.{% endif %}</p>
+<p class="muted legend"><span class="dot landed"></span> landed (seen on or near the ground)
+  <span class="dot lost"></span> signal lost (last position seen)
+  {% if destination %}<span class="dot dest"></span> {{ destination.name }}{% endif %}</p>
+<div id="map" class="card" style="padding:0;height:520px"></div>
+<p class="muted">Positions come from public ADS-B data and are approximate. Tap a point for the date and aircraft.
+  Missions and landings are inferred; nothing here asserts that a patient was on board.</p>
+{{ points|json_script:"route-points" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const points = JSON.parse(document.getElementById('route-points').textContent);
+  const map = L.map('map', {zoomSnap: 0.25}).setView([40.0, -89.4], 7);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+  const bounds = [];
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  points.forEach(p => {
+    L.circleMarker([p.lat, p.lon], {radius: 6, weight: 1.5, color: p.lost ? '#8a5a00' : '#1d4ed8',
+                                    fillColor: p.lost ? '#f2b84b' : '#3b82f6', fillOpacity: 0.7, dashArray: p.lost ? '2 2' : null})
+      .bindPopup(`${esc(p.day)} · <a href="${esc(p.url)}">${esc(p.tail)}</a><br>${p.lost ? 'Signal lost (last seen here)' : 'Landed here'}`)
+      .addTo(map);
+    bounds.push([p.lat, p.lon]);
+  });
+  {% if destination %}
+  const dest = [{{ destination.lat|stringformat:"f" }}, {{ destination.lon|stringformat:"f" }}];
+  L.circle(dest, {radius: {{ destination.radius_m }}, color: '#b3261e', weight: 2, fillOpacity: 0.2}).addTo(map)
+    .bindPopup('{{ destination.name|escapejs }}');
+  L.circleMarker(dest, {radius: 7, color: '#b3261e', fillColor: '#b3261e', fillOpacity: 1}).addTo(map);
+  bounds.push(dest);
+  {% endif %}
+  if (bounds.length) map.fitBounds(bounds, {padding: [30, 30], maxZoom: 15});
+})();
+</script>
+{% endblock %}

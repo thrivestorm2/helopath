@@ -62,10 +62,12 @@ class SiteAdmin(ImportExportModelAdmin):
     list_filter = ("site_type", "state", "reviewed", "is_active", "origin")
     search_fields = ("name", "faa_id", "city")
     actions = [mark_reviewed, deactivate]
+    autocomplete_fields = ("weather_hangar",)
     change_form_template = "admin/tracker/site/change_form.html"
     fieldsets = (
         (None, {"fields": ("name", "site_type", "faa_id", "city", "state")}),
         ("Location (click the map to set)", {"fields": ("lat", "lon", "elevation_ft", "radius_m")}),
+        ("Bad weather", {"fields": ("weather_hangar",)}),
         ("Status", {"fields": ("origin", "reviewed", "is_active", "notes")}),
     )
 
