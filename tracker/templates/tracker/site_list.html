@@ -13,8 +13,8 @@
 <div id="map"></div>
 {{ map_sites|json_script:"sites" }}
 {% else %}
-<div class="scroll"><table>
-<tr>
+<div class="scroll"><table class="stack">
+<tr class="head">
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'name' %}-{% endif %}name">Name</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'site_type' %}-{% endif %}site_type">Type</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'city' %}-{% endif %}city">City</a></th>
@@ -25,13 +25,13 @@
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'reviewed' %}-{% endif %}reviewed">Reviewed</a></th>
 </tr>
 {% for s in page %}
-<tr>
-  <td><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a></td><td>{{ s.get_site_type_display }}</td>
-  <td>{{ s.city }}</td><td>{{ s.state }}</td><td>{{ s.faa_id }}</td>
-  <td><code>{{ s.lat|floatformat:5 }}, {{ s.lon|floatformat:5 }}</code></td><td class="n">{{ s.radius_m }}</td>
-  <td>{% if s.reviewed %}✓{% else %}<span class="muted">no</span>{% endif %}</td>
+<tr data-href="{% url 'site_detail' s.pk %}">
+  <td class="lead"><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a></td><td data-label="Type">{{ s.get_site_type_display }}</td>
+  <td data-label="City">{{ s.city }}</td><td data-label="State">{{ s.state }}</td><td data-label="FAA ID">{{ s.faa_id }}</td>
+  <td data-label="Coordinates"><code>{{ s.lat|floatformat:5 }}, {{ s.lon|floatformat:5 }}</code></td><td class="n" data-label="Radius (m)">{{ s.radius_m }}</td>
+  <td data-label="Reviewed">{% if s.reviewed %}✓{% else %}<span class="muted">no</span>{% endif %}</td>
 </tr>
-{% empty %}<tr><td colspan="8" class="muted">No sites match.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="8" class="muted empty-row">No sites match.</td></tr>{% endfor %}
 </table></div>
 {% include "tracker/_pager.html" %}
 {% endif %}
