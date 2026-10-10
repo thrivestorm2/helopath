@@ -9,6 +9,9 @@
     <span class="pin {{ kind }}" aria-hidden="true"></span> {% if kind == "base" %}Bases{% elif kind == "hospital" %}Hospitals{% else %}Hangars{% endif %}
     <span class="muted">({{ n }})</span></label>
   {% endfor %}
+  <label class="map-toggle" title="Places used for repeat landings that are not sites yet">
+    <input type="checkbox" name="show" value="spot" {% if "spot" in shown %}checked{% endif %}>
+    <span class="pin spot" aria-hidden="true"></span> Unadded spots <span class="muted">({{ n_spots }})</span></label>
   <label class="map-toggle" title="Where ADS-B positions were received in the last {{ coverage_days }} days">
     <input type="checkbox" name="show" value="coverage" {% if "coverage" in shown %}checked{% endif %}>
     <span class="coverage-key" aria-hidden="true"></span> Coverage</label>
@@ -46,20 +49,27 @@
   // A hospital that is also a base: hospital pin while Hospitals is on; base pin when only Bases is on;
   // hidden when both are off (see apply()).
   const layers = {base: L.featureGroup(), hospital: L.featureGroup(), hangar: L.featureGroup(),
-                  hospitalBase: L.featureGroup()};
-  const z = {hospital: 0, hangar: 500, base: 1000};  // bases on top
+                  hospitalBase: L.featureGroup(), spot: L.featureGroup()};
+  const z = {spot: -500, hospital: 0, hangar: 500, base: 1000};  // bases on top
+  // "Add as site" links come back to the map as it is now (toggles may have changed since the page loaded).
+  const href = m => {
+    if (m.kind !== 'spot') return m.url;
+    const u = new URL(m.url, window.location.origin);
+    u.searchParams.set('next', window.location.pathname + window.location.search);
+    return u.pathname + u.search;
+  };
   const pin = (m, kind, group) => {
     const icon = L.divIcon({className: '', html: `<span class="pin ${kind}"></span>`, iconSize: [20, 20], iconAnchor: [10, 10]});
     const info = `<strong>${esc(m.name)}</strong>` + m.info.map(i => `<br>${esc(i)}`).join('');
     const mk = L.marker([m.lat, m.lon], {icon, title: m.name, zIndexOffset: z[kind], keyboard: true});
     if (touch) {
       // No hover on phones: the first tap shows the details with a link to the page.
-      mk.bindPopup(info + `<br><a href="${esc(m.url)}">Open page →</a>`);
+      mk.bindPopup(() => info + (m.url ? `<br><a href="${esc(href(m))}">${esc(m.link || 'Open page →')}</a>` : ''));
     } else {
       mk.bindTooltip(info, {direction: 'top', offset: [0, -8]});
-      mk.on('click', e => {
-        if (e.originalEvent && (e.originalEvent.metaKey || e.originalEvent.ctrlKey)) window.open(m.url, '_blank');
-        else window.location.href = m.url;
+      if (m.url) mk.on('click', e => {
+        if (e.originalEvent && (e.originalEvent.metaKey || e.originalEvent.ctrlKey)) window.open(href(m), '_blank');
+        else window.location.href = href(m);
       });
     }
     mk.addTo(layers[group]);
