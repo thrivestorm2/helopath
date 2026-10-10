@@ -186,7 +186,7 @@ def run_discovery(source):
     # (e.g. a site was deactivated), is a derived row and goes away on rebuild.
     for hexid, a in existing.items():
         untouched = a.status == Aircraft.DISCOVERED and a.origin == "auto" and not (
-            a.operator_id or a.base_id or a.notes or a.program_name
+            a.operator_id or a.base_id or a.notes or a.program_id
         )
         if untouched and hexid not in qualified:
             a.delete()

@@ -23,6 +23,21 @@ class Operator(models.Model):
         return self.name
 
 
+class Program(models.Model):
+    """A flight program: the service name on the aircraft (e.g. a hospital-branded program), flown by an operator."""
+
+    name = models.CharField(max_length=200, unique=True)
+    operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL, related_name="programs",
+                                 help_text="The company that flies it, if known.")
+    notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Site(models.Model):
     HOSPITAL = "hospital_helipad"
     BASE = "base"
@@ -85,7 +100,7 @@ class Aircraft(models.Model):
 
     # Admin-owned.
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL)
-    program_name = models.CharField(max_length=200, blank=True)
+    program = models.ForeignKey(Program, null=True, blank=True, on_delete=models.SET_NULL, related_name="aircraft")
     base = models.ForeignKey(Site, null=True, blank=True, on_delete=models.SET_NULL, related_name="based_aircraft")
     active_from = models.DateField(null=True, blank=True)
     active_to = models.DateField(null=True, blank=True)
