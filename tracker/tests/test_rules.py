@@ -74,16 +74,67 @@ class RulesScreenTests(TestCase):
 
     def test_add_rule_confirms_waiting_aircraft_now(self):
         a = make("N9PH", "PHI HEALTH LLC")
+        op = Operator.objects.create(name="PHI Air Medical")
         self.client.force_login(self.admin)
         r = self.client.post(reverse("review_rules"), {"action": "add", "registrant_contains": " PHI  HEALTH ",
-                                                       "operator_name": "PHI Air Medical"}, follow=True)
-        self.assertContains(r, "1 waiting aircraft confirmed now")
+                                                       "operator": op.pk}, follow=True)
+        self.assertContains(r, "1 aircraft updated now")
         a.refresh_from_db()
-        self.assertEqual((a.status, a.operator.name), (Aircraft.CONFIRMED, "PHI Air Medical"))
+        self.assertEqual((a.status, a.operator), (Aircraft.CONFIRMED, op))
         rule = AutoConfirmRule.objects.get(registrant_contains="PHI HEALTH")
-        self.assertEqual(rule.created_by, self.admin)
+        self.assertEqual((rule.created_by, rule.operator), (self.admin, op))
         self.assertEqual(OpsTask.objects.filter(kind=OpsTask.REFRESH).count(), 1)
         self.assertContains(r, "Registrant contains <strong>PHI HEALTH</strong>")
+
+    def test_rule_requires_an_existing_operator(self):
+        make("N10P", "PHI HEALTH LLC")
+        self.client.force_login(self.admin)
+        for operator in ["", "999999"]:
+            r = self.client.post(reverse("review_rules"), {"action": "add", "registrant_contains": "PHI HEALTH",
+                                                           "operator": operator, "operator_name": "Brand New"},
+                                 follow=True)
+            self.assertContains(r, "Choose an existing operator")
+        self.assertFalse(AutoConfirmRule.objects.filter(registrant_contains="PHI HEALTH").exists())
+        self.assertFalse(Operator.objects.exists())  # never created from a rule form
+
+    def test_card_link_adds_rule_for_that_registrant_and_returns(self):
+        op = Operator.objects.create(name="Air Evac Lifeteam")
+        card = make("N11E", "AIR EVAC EMS INC")
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("review_queue"))
+        self.assertContains(page, 'name="registrant_contains" value="AIR EVAC EMS INC"')
+        self.assertContains(page, "Auto-confirm this registrant")
+        r = self.client.post(reverse("review_rules"), {"action": "add", "registrant_contains": "AIR EVAC EMS INC",
+                                                       "operator": op.pk, "next": "/review/?page=2"})
+        self.assertEqual(r["Location"], "/review/?page=2")
+        card.refresh_from_db()
+        self.assertEqual((card.status, card.operator), (Aircraft.CONFIRMED, op))
+
+    def test_card_link_hidden_until_an_operator_exists(self):
+        make("N12E", "AIR EVAC EMS INC")
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("review_queue"))
+        self.assertNotContains(page, "<button name=\"action\" value=\"add\">Auto-confirm this registrant")
+        self.assertContains(page, "first create an operator")
+
+    def test_setting_operator_on_preloaded_rule_fills_its_confirmed_aircraft(self):
+        a = make("N13AM", "AIR METHODS LLC")
+        apply_auto_confirm_rules()  # preloaded rule has no operator yet
+        a.refresh_from_db()
+        self.assertEqual((a.status, a.operator), (Aircraft.CONFIRMED, None))
+        op = Operator.objects.create(name="Air Methods")
+        rule = AutoConfirmRule.objects.get(registrant_contains="AIR METHODS LLC")
+        self.client.force_login(self.admin)
+        self.client.post(reverse("review_rules"), {"action": "set_operator", "rule": rule.pk, "operator": op.pk})
+        a.refresh_from_db()
+        self.assertEqual(a.operator, op)
+
+    def test_most_visited_hospitals_one_per_line(self):
+        make("N14H", "X", top_hospitals_hint="OSF St Francis (5); Carle (3); Memorial (1)")
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("review_queue"))
+        self.assertContains(page, '<br><span style="padding-left:1em">OSF St Francis (5)</span>'
+                                  '<br><span style="padding-left:1em">Carle (3)</span>', html=False)
 
     def test_switch_off_and_validation(self):
         self.client.force_login(self.admin)
@@ -91,7 +142,9 @@ class RulesScreenTests(TestCase):
         self.client.post(reverse("review_rules"), {"action": "off", "rule": rule.pk})
         rule.refresh_from_db()
         self.assertFalse(rule.is_active)
-        r = self.client.post(reverse("review_rules"), {"action": "add", "registrant_contains": "AI"}, follow=True)
+        op = Operator.objects.create(name="Air Methods")
+        r = self.client.post(reverse("review_rules"), {"action": "add", "registrant_contains": "AI", "operator": op.pk},
+                             follow=True)
         self.assertContains(r, "at least 4 characters")
 
     def test_viewers_cannot_manage_rules(self):

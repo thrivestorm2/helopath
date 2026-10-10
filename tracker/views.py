@@ -278,6 +278,7 @@ def review_queue(request):
             status=Aircraft.CONFIRMED, registrant_hint__icontains=rule.registrant_contains).count()
     return render(request, "tracker/review_queue.html", {
         "rules": rules,
+        "operators": Operator.objects.all(),
         "page": page,
         "total": page.paginator.count,
         "operator_options": operator_options,
@@ -327,32 +328,44 @@ def review_action(request, pk):
 @require_POST
 @admin_required
 def review_rules(request):
-    """Add or switch off an auto-confirm rule from the review queue."""
-    if request.POST.get("action") == "add":
-        text = " ".join(request.POST.get("registrant_contains", "").split())[:200]
-        if len(text) < 4:
-            messages.error(request, "Enter at least 4 characters of the registrant name.")
-            return redirect("review_queue")
-        name = " ".join(request.POST.get("operator_name", "").split())[:200]
-        operator = Operator.objects.get_or_create(name=name)[0] if name else None
-        rule, created = AutoConfirmRule.objects.get_or_create(
-            registrant_contains=text, defaults={"operator": operator, "created_by": request.user})
-        if not created:
-            rule.is_active, rule.operator = True, operator or rule.operator
-            rule.save(update_fields=["is_active", "operator"])
-        _log(request.user, rule, f"Auto-confirm rule {'added' if created else 're-enabled'}: {text}")
+    """Add a rule, change a rule's operator, or switch a rule off. Rules must name an existing operator."""
+    action = request.POST.get("action")
+    nxt = request.POST.get("next", "")
+    back = redirect(nxt if nxt.startswith("/review/") else "review_queue")
+    if action in ("add", "set_operator"):
+        operator = Operator.objects.filter(pk=request.POST.get("operator") or None).first()
+        if operator is None:
+            messages.error(request, "Choose an existing operator for the rule. New operators are added by typing "
+                                    "a name in a card's Operator box and pressing Save.")
+            return back
+        if action == "add":
+            text = " ".join(request.POST.get("registrant_contains", "").split())[:200]
+            if len(text) < 4:
+                messages.error(request, "Enter at least 4 characters of the registrant name.")
+                return back
+            rule, created = AutoConfirmRule.objects.get_or_create(
+                registrant_contains=text, defaults={"operator": operator, "created_by": request.user})
+            if not created:
+                rule.is_active, rule.operator = True, operator
+                rule.save(update_fields=["is_active", "operator"])
+            _log(request.user, rule, f"Auto-confirm rule {'added' if created else 'updated'}: {text} -> {operator}")
+        else:
+            rule = get_object_or_404(AutoConfirmRule, pk=request.POST.get("rule"))
+            rule.operator = operator
+            rule.save(update_fields=["operator"])
+            _log(request.user, rule, f"Auto-confirm rule operator set: {rule.registrant_contains} -> {operator}")
         n = apply_auto_confirm_rules()
         if n:
             queue_refresh(request.user)
-        messages.success(request, f"Rule saved. {n} waiting aircraft confirmed now; future matches are confirmed "
-                                  "automatically when discovered.")
-    elif request.POST.get("action") == "off":
+        messages.success(request, f"Rule for “{rule.registrant_contains}” → {operator} saved. {n} aircraft updated "
+                                  "now; future matches are confirmed automatically when discovered.")
+    elif action == "off":
         rule = get_object_or_404(AutoConfirmRule, pk=request.POST.get("rule"))
         rule.is_active = False
         rule.save(update_fields=["is_active"])
         _log(request.user, rule, f"Auto-confirm rule switched off: {rule.registrant_contains}")
         messages.success(request, "Rule switched off. Aircraft it already confirmed stay confirmed.")
-    return redirect("review_queue")
+    return back
 
 
 @admin_required
