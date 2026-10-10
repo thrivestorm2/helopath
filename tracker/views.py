@@ -232,7 +232,8 @@ def site_detail(request, pk):
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
         "site": site, "months": months, "rows": rows, "n_based": n_based,
-        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based and site.weather_hangar_id != site.pk else [],
+        # Once a hangar is set the card just names it; changing it is done on the admin Edit page.
+        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based and not site.weather_hangar_id else [],
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
     })
 
@@ -303,6 +304,7 @@ def route_map(request):
 
 def program_detail(request, pk):
     program = get_object_or_404(Program.objects.select_related("operator"), pk=pk)
+    can_delete = is_admin(request.user) and (request.user.is_superuser or not program.aircraft.exists())
     aircraft = (Aircraft.objects.filter(program=program, status__in=_statuses(request))
                 .select_related("operator", "base", "inferred_base").order_by(Aircraft.sort_name()))
     missions = Mission.objects.filter(source=SOURCE, aircraft__program=program, aircraft__status__in=_statuses(request))
@@ -315,7 +317,7 @@ def program_detail(request, pk):
             flows[(m.origin_site, m.destination_site, m.label)] += 1
     months = sorted(per_month, reverse=True)
     return render(request, "tracker/program_detail.html", {
-        "program": program,
+        "program": program, "can_delete": can_delete,
         "aircraft": aircraft,
         "labels": Mission.LABELS,
         "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
