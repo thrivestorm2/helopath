@@ -21,16 +21,19 @@
     &nbsp; <strong>{{ flows.sent }}</strong> sent <span class="muted">· to other hospitals</span></p>
   <h3>Received from</h3>
   <div class="scroll"><table>
-  <tr><th>From</th>{% for m in flows.months %}<th class="n">{{ m|date:"Y-m" }}</th>{% endfor %}<th class="n">Total</th></tr>
-  {% for name, link, counts, tot in flows.received_rows %}<tr data-href="{{ link }}"><td><a href="{{ link }}"{% if name == "Scenes" %} class="map-link"{% endif %}>{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n"><strong>{{ tot }}</strong></td></tr>
+  <tr><th class="fac">From</th>{% for m in flows.months %}<th class="n" title="{{ m|date:'F Y' }}">{{ m|date:"M" }}</th>{% endfor %}<th class="n" title="Average per month over {{ flows.n_months }} month{{ flows.n_months|pluralize }}">Avg</th><th class="n">Total</th></tr>
+  {% for name, link, counts, avg, tot in flows.received_rows %}<tr class="name-row" data-href="{{ link }}"><td colspan="{{ flows.months|length|add:3 }}"><a href="{{ link }}">{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td></tr>
+  <tr data-href="{{ link }}"><td class="fac"><a href="{{ link }}"{% if name == "Scenes" %} class="map-link"{% endif %}>{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n">{{ avg|floatformat:1 }}</td><td class="n"><strong>{{ tot }}</strong></td></tr>
   {% empty %}<tr><td class="muted">No patients received yet.</td></tr>{% endfor %}
   </table></div>
   <h3>Sent to</h3>
   <div class="scroll"><table>
-  <tr><th>To</th>{% for m in flows.months %}<th class="n">{{ m|date:"Y-m" }}</th>{% endfor %}<th class="n">Total</th></tr>
-  {% for name, link, counts, tot in flows.sent_rows %}<tr data-href="{{ link }}"><td><a href="{{ link }}">{{ name }}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n"><strong>{{ tot }}</strong></td></tr>
+  <tr><th class="fac">To</th>{% for m in flows.months %}<th class="n" title="{{ m|date:'F Y' }}">{{ m|date:"M" }}</th>{% endfor %}<th class="n" title="Average per month over {{ flows.n_months }} month{{ flows.n_months|pluralize }}">Avg</th><th class="n">Total</th></tr>
+  {% for name, link, counts, avg, tot in flows.sent_rows %}<tr class="name-row" data-href="{{ link }}"><td colspan="{{ flows.months|length|add:3 }}"><a href="{{ link }}">{{ name }}</a></td></tr>
+  <tr data-href="{{ link }}"><td class="fac"><a href="{{ link }}">{{ name }}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n">{{ avg|floatformat:1 }}</td><td class="n"><strong>{{ tot }}</strong></td></tr>
   {% empty %}<tr><td class="muted">No transfers out yet.</td></tr>{% endfor %}
   </table></div>
+  {% if flows.n_months > flows.months|length %}<p class="muted">Showing the latest {{ flows.months|length }} of {{ flows.n_months }} months; Avg (per month) and Total cover all {{ flows.n_months }}.</p>{% endif %}
   <p class="muted">Counted from inferred missions: a scene or another hospital followed by a landing here is a patient
     received; a landing here followed by another hospital is a patient sent.{% if flows.unresolved %}
     {{ flows.unresolved }} visit{{ flows.unresolved|pluralize }} where the direction is unknown {{ flows.unresolved|pluralize:"is,are" }} not counted.{% endif %}</p>

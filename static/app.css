@@ -96,3 +96,11 @@ form.suggestion { display: flex; align-items: center; justify-content: space-bet
 form.inline { display: inline; margin: 0; }
 button.link { background: none; border: 0; padding: 0; color: #1d4ed8; text-decoration: underline; cursor: pointer; font: inherit; }
 #patients h3 { font-size: 15px; margin: 14px 0 6px; }
+#patients th, #patients td { padding-left: 5px; padding-right: 5px; }
+#patients tr.name-row { display: none; }
+@media (max-width: 640px) {  /* phones: hospital name on its own line, numbers below, so 6 months fit */
+  #patients table { font-size: 13px; }
+  #patients tr.name-row { display: table-row; }
+  #patients tr.name-row td { border-bottom: 0; padding-bottom: 0; font-weight: 600; }
+  #patients .fac { display: none; }
+}

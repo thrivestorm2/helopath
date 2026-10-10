@@ -214,9 +214,10 @@ def _with_patient_counts(request, qs):
                        sent=total("origin_site", label="interfacility"))
 
 
-def patient_flows(request, site, limit=25):
-    """Inferred patients received at and sent from a site, month by month, per hospital on the other end
-    (scenes are one row of the received table). Rows rank by total."""
+def patient_flows(request, site, limit=25, show_months=6):
+    """Inferred patients received at and sent from a site, per hospital on the other end (scenes are one row of the
+    received table): the latest `show_months` months, the monthly average and the total over all months with data.
+    Rows rank by total."""
     aggs = _patient_aggs(request)
     inbound = aggs.filter(destination_site=site, label__in=PATIENT_IN)
     outbound = aggs.filter(origin_site=site, label="interfacility")
@@ -229,17 +230,19 @@ def patient_flows(request, site, limit=25):
         received[key][month] += n
     for pk, name, month, n in outbound.values_list("destination_site", "destination_site__name", "month", "count"):
         sent[(name, reverse("site_detail", args=[pk]) + keep)][month] += n
-    months = sorted({m for table in (received, sent) for c in table.values() for m in c})
+    all_months = sorted({m for table in (received, sent) for c in table.values() for m in c})
+    months = all_months[-show_months:]  # columns that fit on a phone; average and total use every month
 
     def rows(table):
         ranked = sorted(table.items(), key=lambda kv: (-sum(kv[1].values()), kv[0][0]))[:limit]
-        return [(name, link, [c[m] for m in months], sum(c.values())) for (name, link), c in ranked]
+        return [(name, link, [c[m] for m in months], sum(c.values()) / len(all_months), sum(c.values()))
+                for (name, link), c in ranked]
 
     total = lambda table: sum(sum(c.values()) for c in table.values())
     from_scenes = sum(received.get(("Scenes", scene_map), Counter()).values())
     unresolved = aggs.filter(destination_site=site, label="single_hospital_unresolved").aggregate(n=Sum("count"))["n"]
     return {
-        "months": months, "received_rows": rows(received), "sent_rows": rows(sent),
+        "months": months, "n_months": len(all_months), "received_rows": rows(received), "sent_rows": rows(sent),
         "received": total(received), "from_scenes": from_scenes, "from_hospitals": total(received) - from_scenes,
         "sent": total(sent), "unresolved": unresolved or 0, "scene_map": scene_map,
     }
