@@ -9,11 +9,16 @@
 {% if n_based or site.weather_hangar %}
 <div class="card" id="hangar">
   <h2 style="margin-top:0">Bad-weather hangar</h2>
-  <p>{% if site.weather_hangar %}The {{ n_based }} aircraft based here shelter at
-    <a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>. Flights to and from it
-    count like flights from the base.
-  {% else %}No weather hangar set for the {{ n_based }} aircraft based here.{% endif %}</p>
-  {% if is_admin and site.weather_hangar %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<button>Clear weather hangar</button></form>{% endif %}
+  {% if site.weather_hangar_id == site.pk %}
+  <p>The {{ n_based }} aircraft based here {{ n_based|pluralize:"is,are" }} hangared at the base itself; there is no separate weather hangar.</p>
+  {% elif site.weather_hangar %}
+  <p>The {{ n_based }} aircraft based here shelter at <a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>.
+    Flights to and from it count like flights from the base.</p>
+  {% else %}<p>No weather hangar set for the {{ n_based }} aircraft based here.</p>{% endif %}
+  {% if is_admin %}<div class="actions">
+    {% if site.weather_hangar_id != site.pk %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button>Hangar is at this base</button></form>{% endif %}
+    {% if site.weather_hangar %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<button>Clear</button></form>{% endif %}
+  </div>{% endif %}
   {% if hangar_suggestions %}
   <p class="muted">Airports where these aircraft started the day instead of here:</p>
   <table class="stack"><tr class="head"><th>Airport</th><th class="n">Days started there</th><th class="n">Aircraft</th>{% if is_admin %}<th></th>{% endif %}</tr>

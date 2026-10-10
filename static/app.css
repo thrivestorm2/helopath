@@ -81,3 +81,5 @@ a.map-link { white-space: nowrap; }
 .legend .dot.landed { background: #3b82f6; border: 1.5px solid #1d4ed8; }
 .legend .dot.lost { background: #f2b84b; border: 1.5px dashed #8a5a00; }
 .legend .dot.dest { background: #b3261e; }
+
+#hangar .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }

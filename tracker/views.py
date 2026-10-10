@@ -151,7 +151,7 @@ def aircraft_detail(request, pk):
     # Weather hangar comes from the base: the one set on it, else the base's top suggestion (marked unconfirmed).
     base = aircraft.base or aircraft.inferred_base
     hangar, hangar_days = (base.weather_hangar if base else None), None
-    if base and not hangar:
+    if base and not hangar:  # (a base hangared at itself has weather_hangar == base: shown as "at base")
         top = suggest_hangars(base, SOURCE, limit=1)
         if top:
             hangar, hangar_days = top[0][0], top[0][1]
@@ -204,7 +204,7 @@ def site_detail(request, pk):
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
         "site": site, "months": months, "rows": rows, "n_based": n_based,
-        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based else [],
+        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based and site.weather_hangar_id != site.pk else [],
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
     })
 
@@ -302,16 +302,14 @@ def program_detail(request, pk):
 def set_weather_hangar(request, pk):
     site = get_object_or_404(Site, pk=pk)
     hangar = get_object_or_404(Site, pk=request.POST["hangar"]) if request.POST.get("hangar") else None
-    if hangar and hangar.pk == site.pk:
-        messages.error(request, "A base cannot be its own weather hangar.")
-    else:
-        site.weather_hangar = hangar
-        site.save(update_fields=["weather_hangar", "updated"])
-        _log(request.user, site, f"Weather hangar set to {hangar or 'none'}")
-        messages.success(request, format_html(
-            "Weather hangar {}. Missions change after the next rebuild. "
-            '<a class="button" href="{}">Queue rebuild</a>',
-            f"set to {hangar.name}" if hangar else "cleared", reverse("queue_rebuild")))
+    site.weather_hangar = hangar  # the site itself means "hangared at the base": no separate shelter
+    site.save(update_fields=["weather_hangar", "updated"])
+    what = "the base itself" if hangar == site else hangar.name if hangar else None
+    _log(request.user, site, f"Weather hangar set to {what or 'none'}")
+    messages.success(request, format_html(
+        "Weather hangar {}. Missions change after the next rebuild. "
+        '<a class="button" href="{}">Queue rebuild</a>',
+        f"set to {what}" if hangar else "cleared", reverse("queue_rebuild")))
     return redirect("site_detail", pk=site.pk)
 
 
