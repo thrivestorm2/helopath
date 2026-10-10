@@ -124,6 +124,44 @@ class HospitalBaseTests(TestCase):
         confs = list(Mission.objects.order_by("start_ts").values_list("confidence", flat=True))
         self.assertEqual(confs[:3], [0.6, 0.6, 1.0])  # drop-off at the base is less certain
 
+    def _other_landings(self, tail, base, at, n):
+        """n landings at `at` by another aircraft based at `base` (None: no base)."""
+        other = Aircraft.objects.create(tail_number=tail, icao_hex=tail.lower()[-6:].rjust(6, "b"),
+                                        status=Aircraft.CONFIRMED, base=base)
+        legs = LegFactory(other)
+        legs.t = T0 + timedelta(days=5)
+        for _ in range(n):
+            legs.fly(SCENE, at)
+
+    def _aba(self):
+        self.legs.fly(self.hosp_a, self.hosp_b, self.hosp_a)
+        pipeline.build_missions("adsblol")
+        return Mission.objects.filter(aircraft=self.a).values_list(
+            "label", "origin_site__name", "destination_site__name", "rule_fired", "confidence").get()
+
+    def test_there_and_back_goes_to_the_busier_hospital(self):
+        self._other_landings("N1OT", None, self.hosp_b, 3)  # B is the busier hospital
+        self._other_landings("N2OT", None, self.hosp_a, 1)
+        self.assertEqual(self._aba(), ("interfacility", "Hospital A", "Hospital B",
+                                       "base>H>H>base (to the busier hospital)", 0.6))
+
+    def test_there_and_back_inbound_when_base_is_busier_or_tied(self):
+        self._other_landings("N1OT", None, self.hosp_a, 2)
+        self._other_landings("N2OT", None, self.hosp_b, 2)  # tie: inbound, as before
+        self.assertEqual(self._aba()[:3], ("interfacility", "Hospital B", "Hospital A"))
+
+    def test_aircraft_based_at_either_hospital_do_not_count(self):
+        # B's own helicopter lands at B constantly, and this aircraft's own trips land at B too;
+        # neither makes B look busier than A.
+        self._other_landings("N1OT", self.hosp_b, self.hosp_b, 10)
+        self._other_landings("N2OT", None, self.hosp_a, 1)
+        self.legs.fly(self.hosp_a, self.hosp_b, self.hosp_a)  # an earlier there-and-back
+        self.assertEqual(Mission.objects.count(), 0)
+        pipeline.build_missions("adsblol")
+        labels = list(Mission.objects.filter(aircraft=self.a).values_list("origin_site__name",
+                                                                           "destination_site__name"))
+        self.assertEqual(labels, [("Hospital B", "Hospital A")])
+
     def test_non_hospital_base_unchanged(self):
         self.hosp_a.site_type = Site.BASE
         self.hosp_a.save()
