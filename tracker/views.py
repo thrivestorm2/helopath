@@ -98,7 +98,8 @@ def dashboard(request):
     return render(request, "tracker/dashboard.html", {
         "rate": rate, "resolved": resolved, "total": total,
         "months": [(m, legs_by_month[m], missions_by_month[m]) for m in months],
-        "by_operator": [(pk, name, n) for (pk, name), n in sorted(by_operator.items(), key=lambda kv: -kv[1])],
+        "by_operator": [(pk, name, n, operator_link(request, pk))
+                        for (pk, name), n in sorted(by_operator.items(), key=lambda kv: -kv[1])],
         "by_base": [(pk, name, n) for (pk, name), n in sorted(by_base.items(), key=lambda kv: -kv[1])],
         "aircraft_by_status": dict(Aircraft.objects.values_list("status").annotate(n=Count("id"))),
         "days_ingested": ok_runs.values("day").distinct().count(),
@@ -113,9 +114,12 @@ def aircraft_list(request):
     if q:
         qs = qs.filter(Q(tail_number__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
                        | Q(program_name__icontains=q))
-    for param, field in (("status", "status"), ("operator", "operator_id")):
-        if request.GET.get(param):
-            qs = qs.filter(**{field: request.GET[param]})
+    if request.GET.get("status"):
+        qs = qs.filter(status=request.GET["status"])
+    if request.GET.get("operator") == "none":
+        qs = qs.filter(operator__isnull=True)
+    elif request.GET.get("operator"):
+        qs = qs.filter(operator_id=request.GET["operator"])
     if request.GET.get("base"):
         qs = qs.filter(Q(base_id=request.GET["base"]) | Q(base__isnull=True, inferred_base_id=request.GET["base"]))
     qs, sort = _sorted(qs, request, {"tail_number", "icao_hex", "make_model", "status", "qualifying_visits",
@@ -158,16 +162,25 @@ def site_list(request):
     })
 
 
+def operator_link(request, operator_id):
+    """Operator page, or for unassigned aircraft the aircraft list filtered to them; keeps the confirmed-only view."""
+    if operator_id:
+        return reverse("operator_detail", args=[operator_id]) + ("?confirmed=1" if _confirmed_only(request) else "")
+    return reverse("aircraft_list") + "?operator=none" + ("&status=confirmed" if _confirmed_only(request) else "")
+
+
 def site_detail(request, pk):
     site = get_object_or_404(Site, pk=pk)
     arrivals = Leg.objects.filter(source=SOURCE, end_site=site, aircraft__status__in=_statuses(request))
-    table = defaultdict(Counter)
-    for op, ts in arrivals.values_list("aircraft__operator__name", "end_ts"):
-        table[op or "(unassigned)"][local_day(ts).strftime("%Y-%m")] += 1
+    table = defaultdict(Counter)  # (operator pk or None, name) -> month -> arrivals
+    for op_id, op, ts in arrivals.values_list("aircraft__operator_id", "aircraft__operator__name", "end_ts"):
+        table[(op_id, op or "(unassigned)")][local_day(ts).strftime("%Y-%m")] += 1
     months = sorted({m for c in table.values() for m in c})
+    rows = []
+    for (op_id, name), c in sorted(table.items(), key=lambda kv: (kv[0][0] is None, kv[0][1])):
+        rows.append((op_id, name, operator_link(request, op_id), [c[m] for m in months], sum(c.values())))
     return render(request, "tracker/site_detail.html", {
-        "site": site, "months": months,
-        "rows": [(op, [c[m] for m in months], sum(c.values())) for op, c in sorted(table.items())],
+        "site": site, "months": months, "rows": rows,
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
     })
 
