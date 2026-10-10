@@ -386,6 +386,8 @@ class AutoConfirmRule(models.Model):
         max_length=200, help_text="Case-insensitive text to look for in the FAA registrant name.")
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL,
                                  help_text="Optional: also set this operator when it is not set yet.")
+    program = models.ForeignKey(Program, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                help_text="Optional: also set this program when it is not set yet.")
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)

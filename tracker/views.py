@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.admin.models import CHANGE, LogEntry
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
@@ -35,6 +36,7 @@ from .models import (
     RebuildRequest,
     Site,
 )
+from .operators import absorb_operator
 from .ops import queue_refresh
 from .rebuild_flag import flag_rebuild, rebuild_queued
 from .roles import admin_required, is_admin
@@ -414,6 +416,27 @@ def set_weather_hangar(request, pk):
     return redirect("site_detail", pk=site.pk)
 
 
+@require_POST
+@admin_required
+def operator_acquired(request, pk):
+    """Super admins: the operator was bought by another one; it becomes a program of the buyer."""
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    acquired = get_object_or_404(Operator, pk=pk)
+    buyer = get_object_or_404(Operator, pk=request.POST.get("buyer") or 0)
+    if buyer.pk == acquired.pk:
+        messages.error(request, "Choose a different operator as the buyer.")
+        return redirect("operator_detail", pk=acquired.pk)
+    name = acquired.name
+    program, moved = absorb_operator(acquired, buyer)
+    _log(request.user, program, f"Operator {name} acquired by {buyer}: now a program of {buyer}, {moved} aircraft moved")
+    _log(request.user, buyer, f"Acquired operator {name} ({moved} aircraft) as program {program}")
+    queue_refresh(request.user)
+    messages.success(request, f"{name} is now a program of {buyer}; {moved} aircraft moved. "
+                              "Dashboard figures update within a minute.")
+    return redirect("program_detail", pk=program.pk)
+
+
 def operator_detail(request, pk):
     operator = get_object_or_404(Operator, pk=pk)
     aircraft = list(Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
@@ -441,6 +464,7 @@ def operator_detail(request, pk):
     months = sorted(per_month, reverse=True)
     return render(request, "tracker/operator_detail.html", {
         "operator": operator,
+        "buyers": Operator.objects.exclude(pk=operator.pk) if request.user.is_superuser else [],
         "aircraft": aircraft,
         "labels": Mission.LABELS,
         "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
@@ -557,7 +581,7 @@ def review_queue(request):
     operator_options = sorted(set(Operator.objects.values_list("name", flat=True)) | set(hints))
     sites = Site.objects.filter(is_active=True, site_type__in=[Site.BASE, Site.AIRPORT, Site.HOSPITAL]).order_by(
         "site_type", "name")
-    rules = list(AutoConfirmRule.objects.filter(is_active=True).select_related("operator"))
+    rules = list(AutoConfirmRule.objects.filter(is_active=True).select_related("operator", "program"))
     for rule in rules:
         rule.confirmed_count = Aircraft.objects.filter(
             status=Aircraft.CONFIRMED, registrant_hint__icontains=rule.registrant_contains).count()

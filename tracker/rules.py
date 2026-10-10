@@ -11,12 +11,13 @@ def matching(rule, statuses=(Aircraft.DISCOVERED,)):
 
 def apply_auto_confirm_rules():
     """Confirm discovered aircraft that match an active rule, and give matching aircraft the rule's
-    operator when they have none. Never touches rejected aircraft or an operator already set.
+    operator and program when they have none. Never touches rejected aircraft, or an operator or program
+    already set.
     Returns how many aircraft changed."""
     changed = 0
     # Rules seeded without an author are logged under the first superuser (the owner).
     owner = User.objects.filter(is_superuser=True).order_by("pk").first()
-    for rule in AutoConfirmRule.objects.filter(is_active=True).select_related("operator", "created_by"):
+    for rule in AutoConfirmRule.objects.filter(is_active=True).select_related("operator", "program", "created_by"):
         if not rule.registrant_contains.strip():
             continue
         user = rule.created_by or owner
@@ -30,6 +31,10 @@ def apply_auto_confirm_rules():
                 aircraft.operator = rule.operator
                 fields.append("operator")
                 notes.append(f"operator set to {rule.operator}")
+            if rule.program_id and not aircraft.program_id:
+                aircraft.program = rule.program
+                fields.append("program")
+                notes.append(f"program set to {rule.program}")
             if not fields:
                 continue
             aircraft.save(update_fields=fields)
