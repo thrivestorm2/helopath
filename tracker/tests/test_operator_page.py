@@ -103,7 +103,7 @@ class OperatorPageTests(TestCase):
 
     def test_aircraft_page_edit_link_for_admins_only(self):
         url = reverse("aircraft_detail", args=[self.a.pk])
-        edit = f'href="{reverse("admin:tracker_aircraft_change", args=[self.a.pk])}">Edit</a>'
+        edit = f'href="{reverse("admin:tracker_aircraft_change", args=[self.a.pk])}?next=/aircraft/{self.a.pk}/">Edit</a>'
         self.assertNotContains(self.client.get(url), edit)
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         self.assertContains(self.client.get(url), edit)
@@ -131,6 +131,31 @@ class OperatorPageTests(TestCase):
         r = self.client.get(reverse("admin:tracker_aircraft_change", args=[self.a.pk]))
         self.assertContains(r, "Hospital A (3)<br>St. John&#x27;s &lt;B&gt; (1)")  # one per line, escaped
         self.assertContains(r, "Top hospitals")
+
+    def test_admin_save_returns_to_the_page_edit_was_clicked_on(self):
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        page = reverse("aircraft_detail", args=[self.a.pk])
+        change = reverse("admin:tracker_aircraft_change", args=[self.a.pk])
+        data = {"status": "confirmed", "notes": "checked"}
+        r = self.client.post(f"{change}?next={page}", {**data, "_save": "Save"})
+        self.assertRedirects(r, page, fetch_redirect_response=False)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.notes, "checked")
+        r = self.client.post(f"{change}?next={page}", {**data, "_continue": "Save and continue"})
+        self.assertIn(f"next=%2Faircraft%2F{self.a.pk}%2F", r["Location"])  # kept for the next save
+        # Without next, or pointing off-site, Save goes to the admin list as usual.
+        changelist = reverse("admin:tracker_aircraft_changelist")
+        r = self.client.post(change, {**data, "_save": "Save"})
+        self.assertTrue(r["Location"].startswith(changelist))
+        r = self.client.post(f"{change}?next=https://evil.example/", {**data, "_save": "Save"})
+        self.assertTrue(r["Location"].startswith(changelist))
+        # The other pages' Edit links carry next too.
+        op_page = reverse("operator_detail", args=[self.op.pk])
+        self.assertContains(self.client.get(op_page),
+                            f'{reverse("admin:tracker_operator_change", args=[self.op.pk])}?next={op_page}"')
+        r = self.client.post(f'{reverse("admin:tracker_operator_change", args=[self.op.pk])}?next={op_page}',
+                             {"name": "Air Evac Lifeteam", "parent_company": "GMR", "notes": "", "_save": "Save"})
+        self.assertRedirects(r, op_page, fetch_redirect_response=False)
 
     def test_login_required_and_404(self):
         self.assertEqual(self.client.get(reverse("operator_detail", args=[999])).status_code, 404)

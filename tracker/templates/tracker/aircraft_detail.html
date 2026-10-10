@@ -1,7 +1,7 @@
 {% extends "tracker/base.html" %}
 {% block content %}
 <h1>{{ aircraft.tail_number }} <span class="badge {{ aircraft.status }}">{{ aircraft.get_status_display }}</span></h1>
-{% if is_admin %}<p class="muted"><a href="{% url 'admin:tracker_aircraft_change' aircraft.pk %}">Edit</a></p>{% endif %}
+{% if is_admin %}<p class="muted"><a href="{% url 'admin:tracker_aircraft_change' aircraft.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></p>{% endif %}
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
 <div class="card">
   <h2>Identity</h2>

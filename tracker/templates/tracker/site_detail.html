@@ -4,7 +4,7 @@
 <p class="muted">{{ site.get_site_type_display }} · {{ site.city }}{% if site.state %}, {{ site.state }}{% endif %}
   {% if site.faa_id %}· FAA {{ site.faa_id }}{% endif %} · radius {{ site.radius_m }} m ·
   {% if site.reviewed %}reviewed{% else %}not yet reviewed{% endif %}{% if not site.is_active %} · <strong>inactive</strong>{% endif %}
-  {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}">Edit</a>{% endif %}</p>
+  {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
 {% if n_based or site.weather_hangar %}
 <div class="card" id="hangar">
@@ -28,7 +28,7 @@
     {% if is_admin %}<td>{% if s.pk == site.weather_hangar_id %}<span class="badge confirmed">Current</span>{% else %}
       <form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ s.pk }}"><button>Use as weather hangar</button></form>{% endif %}</td>{% endif %}</tr>
   {% endfor %}</table>
-  {% elif not site.weather_hangar %}<p class="muted">No airport stands out yet as an overnight spot for them.{% if is_admin %} You can set one on the <a href="{% url 'admin:tracker_site_change' site.pk %}">Edit</a> page.{% endif %}</p>{% endif %}
+  {% elif not site.weather_hangar %}<p class="muted">No airport stands out yet as an overnight spot for them.{% if is_admin %} You can set one on the <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a> page.{% endif %}</p>{% endif %}
 </div>
 {% endif %}
 <h2>Arrivals by operator and month ({{ total }} total)</h2>
