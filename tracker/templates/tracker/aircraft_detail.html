@@ -23,7 +23,8 @@
   <h2>Discovery evidence</h2>
   <table>
     <tr><th>Qualifying visits</th><td>{{ aircraft.qualifying_visits }} at {{ aircraft.distinct_hospitals }} hospital(s)</td></tr>
-    <tr><th>Most visited</th><td>{{ aircraft.top_hospitals_hint|default:"—" }}</td></tr>
+    <tr><th>Most visited</th><td>{% for v in most_visited %}<div class="visit"><a href="{% url 'site_detail' v.end_site %}">{{ v.end_site__name }}</a>
+      <span class="muted">· {{ v.n }} landing{{ v.n|pluralize }}</span></div>{% empty %}—{% endfor %}</td></tr>
     <tr><th>Rule fired</th><td>{{ aircraft.discovery_rule|default:"—" }}</td></tr>
     <tr><th>First / last seen</th><td>{{ aircraft.first_seen|date:"Y-m-d H:i" }} / {{ aircraft.last_seen|date:"Y-m-d H:i" }}</td></tr>
     <tr><th>Discovered</th><td>{{ aircraft.discovered_at|date:"Y-m-d" }} ({{ aircraft.discovery_source }})</td></tr>

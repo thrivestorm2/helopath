@@ -108,6 +108,23 @@ class OperatorPageTests(TestCase):
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         self.assertContains(self.client.get(url), edit)
 
+    def test_aircraft_page_lists_most_visited_with_links(self):
+        now = datetime(2026, 9, 3, 15, tzinfo=timezone.utc)
+        for site in (self.hosp_a, self.hosp_a, self.hosp_b, self.base):
+            Leg.objects.create(hex=self.a.icao_hex, aircraft=self.a, source="adsblol", start_ts=now, end_ts=now,
+                               start_lat=40, start_lon=-89, end_lat=site.lat, end_lon=site.lon, end_site=site,
+                               end_state="landed_observed")
+        r = self.client.get(reverse("aircraft_detail", args=[self.a.pk]))
+        a_link = f'<div class="visit"><a href="{reverse("site_detail", args=[self.hosp_a.pk])}">Hospital A</a>'
+        b_link = f'<div class="visit"><a href="{reverse("site_detail", args=[self.hosp_b.pk])}">Hospital B</a>'
+        self.assertContains(r, a_link)
+        self.assertContains(r, b_link)
+        self.assertContains(r, "· 2 landings")
+        self.assertContains(r, "· 1 landing<")
+        body = r.content.decode()
+        self.assertLess(body.index(a_link), body.index(b_link))  # busiest first
+        self.assertNotIn('<div class="visit"><a href="' + reverse("site_detail", args=[self.base.pk]), body)
+
     def test_login_required_and_404(self):
         self.assertEqual(self.client.get(reverse("operator_detail", args=[999])).status_code, 404)
         self.client.logout()

@@ -155,8 +155,11 @@ def aircraft_detail(request, pk):
         top = suggest_hangars(base, SOURCE, limit=1)
         if top:
             hangar, hangar_days = top[0][0], top[0][1]
+    # Most visited hospitals: resolved landings at hospital helipads, busiest first.
+    most_visited = (legs.filter(end_site__site_type=Site.HOSPITAL).values("end_site", "end_site__name")
+                    .annotate(n=Count("pk")).order_by("-n", "end_site__name")[:5])
     return render(request, "tracker/aircraft_detail.html", {
-        "aircraft": aircraft, "page": page, "base": base, "hangar": hangar, "hangar_days": hangar_days,
+        "aircraft": aircraft, "page": page, "most_visited": most_visited, "base": base, "hangar": hangar, "hangar_days": hangar_days,
         "tracks": [{"id": leg.pk, "state": leg.end_state, "pts": [[p[0], p[1]] for p in leg.simplified_track]}
                    for leg in page],
     })
