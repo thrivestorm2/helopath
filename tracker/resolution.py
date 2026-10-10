@@ -3,6 +3,7 @@
 import math
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from statistics import median
 
 from django.conf import settings
 
@@ -38,6 +39,43 @@ BUCKETS = [
 ]
 
 
+NEAREST_SEARCH_M = 25_000   # how far to look for "nearest site" in the per-leg details
+
+
+def distance_label(m):
+    """'850 m', '3.4 km', or '> 25 km' when no site was found nearby."""
+    if m is None:
+        return f"> {NEAREST_SEARCH_M // 1000} km"
+    return f"{m:,.0f} m" if m < 1000 else f"{m / 1000:.1f} km"
+
+
+CATEGORY_TITLES = {key: title for key, title, _, _ in BUCKETS}
+CATEGORY_ORDER = {key: i for i, (key, _, _, _) in enumerate(BUCKETS)}
+
+
+@dataclass
+class UnresolvedLeg:
+    pk: int
+    category: str
+    end_state: str
+    end_ts: object
+    lat: float
+    lon: float
+    aircraft_id: int
+    operator_id: int
+    agl_ft: float = None
+    nearest_site: object = None
+    nearest_m: float = None
+
+    @property
+    def category_title(self):
+        return CATEGORY_TITLES[self.category]
+
+    @property
+    def nearest_label(self):
+        return distance_label(self.nearest_m)
+
+
 @dataclass
 class Diagnosis:
     total: int = 0
@@ -46,6 +84,7 @@ class Diagnosis:
     near_sites: dict = field(default_factory=lambda: defaultdict(list))   # site -> [distance_m]
     bases: dict = field(default_factory=lambda: defaultdict(int))         # aircraft -> legs ending at its base
     spots: Counter = field(default_factory=Counter)                       # cluster -> legs
+    rows: list = field(default_factory=list)                              # [UnresolvedLeg]
 
     @property
     def rate(self):
@@ -73,36 +112,64 @@ def _point_bases():
 
 
 def diagnose(legs, source):
-    """Sort a queryset of legs into Diagnosis buckets (only the unresolved ones are examined)."""
+    """Sort a queryset of legs into Diagnosis buckets (only the unresolved ones are examined). Each unresolved
+    leg is also kept as a row (UnresolvedLeg) for the per-category metrics and the leg list."""
     d = Diagnosis(total=legs.count())
     d.resolved = legs.filter(end_site__isnull=False).count()
     sites = SiteIndex(Site.objects.filter(is_active=True))
     clusters = SiteIndex(LandingCluster.objects.filter(source=source, dismissed=False,
                                                        landing_count__gte=MIN_CLUSTER_LANDINGS))
     bases = _point_bases()
-    for state, lat, lon, alt, aircraft_id in legs.filter(end_site__isnull=True).values_list(
-            "end_state", "end_lat", "end_lon", "end_alt_ft", "aircraft_id"):
+    for pk, state, end_ts, lat, lon, alt, aircraft_id, operator_id in legs.filter(end_site__isnull=True).values_list(
+            "pk", "end_state", "end_ts", "end_lat", "end_lon", "end_alt_ft", "aircraft_id", "aircraft__operator_id"):
         near = sites.within(lat, lon, NEAR_MISS_M)
+        nearest = near[0] if near else next(iter(sites.within(lat, lon, NEAREST_SEARCH_M)), None)
+        ground = near[0][1].elevation_ft if near and near[0][1].elevation_ft else DEFAULT_GROUND_FT
         base = bases.get(aircraft_id)
         if base and haversine_m(lat, lon, *base) <= settings.BASE_POINT_RADIUS_M:
-            d.counts["base_not_site"] += 1
+            category = "base_not_site"
             d.bases[aircraft_id] += 1
-            continue
-        ground = near[0][1].elevation_ft if near and near[0][1].elevation_ft else DEFAULT_GROUND_FT
-        if state == Leg.LOST and alt is not None and alt - ground > HIGH_AGL_FT:
-            d.counts["lost_high"] += 1
-            continue
-        if near:
-            d.counts["near_site"] += 1
+        elif state == Leg.LOST and alt is not None and alt - ground > HIGH_AGL_FT:
+            category = "lost_high"
+        elif near:
+            category = "near_site"
             d.near_sites[near[0][1]].append(near[0][0])
-            continue
-        spot = clusters.within(lat, lon, settings.CLUSTER_RADIUS_M * 2)
-        if spot:
-            d.counts["unmatched_spot"] += 1
+        elif spot := clusters.within(lat, lon, settings.CLUSTER_RADIUS_M * 2):
+            category = "unmatched_spot"
             d.spots[spot[0][1]] += 1
-            continue
-        d.counts["lost_low" if state == Leg.LOST else "one_off_landing"] += 1
+        else:
+            category = "lost_low" if state == Leg.LOST else "one_off_landing"
+        d.counts[category] += 1
+        d.rows.append(UnresolvedLeg(
+            pk, category, state, end_ts, lat, lon, aircraft_id, operator_id,
+            agl_ft=None if alt is None else max(0, alt - ground),
+            nearest_site=nearest[1] if nearest else None, nearest_m=nearest[0] if nearest else None))
     return d
+
+
+def category_metrics(d):
+    """Per category: legs, share of all legs, aircraft involved, median distance to the nearest site, median
+    height above ground at the end, and the operator with the most of them."""
+    by_cat = defaultdict(list)
+    for row in d.rows:
+        by_cat[row.category].append(row)
+    out = []
+    for key, title, text, fixable in BUCKETS:
+        rows = by_cat.get(key, [])
+        distances = [r.nearest_m for r in rows if r.nearest_m is not None]
+        heights = [r.agl_ft for r in rows if r.agl_ft is not None]
+        operators = Counter(r.operator_id for r in rows if r.operator_id)
+        out.append({
+            "key": key, "title": title, "text": text, "fixable": fixable, "legs": len(rows),
+            "share": len(rows) / d.total if d.total else 0,
+            "aircraft": len({r.aircraft_id for r in rows}),
+            "median_nearest_m": median(distances) if distances else None,
+            "median_nearest": distance_label(median(distances) if distances else None) if rows else "—",
+            "median_agl_ft": median(heights) if heights else None,
+            "top_operator_id": operators.most_common(1)[0][0] if operators else None,
+            "top_operator_legs": operators.most_common(1)[0][1] if operators else 0,
+        })
+    return out
 
 
 def radius_suggestions(d, sites_index=None, min_legs=2, limit=25):

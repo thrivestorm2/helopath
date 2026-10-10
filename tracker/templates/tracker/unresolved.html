@@ -11,14 +11,21 @@
     <div class="muted">{{ d.fixable|intcomma }} more legs resolved</div></div>
 </div>
 
-<h2>Where the unresolved legs end</h2>
+<h2>Unresolved legs by category</h2>
+<p class="muted">Tap a category to list its legs below.</p>
 <div class="scroll"><table class="stack">
-<tr class="head"><th>Cause</th><th class="n">Legs</th><th class="n">Share of all legs</th><th>Fixable here</th></tr>
-{% for key, title, text, fixable, n, share in buckets %}
-<tr{% if fixable and n %} data-href="#{{ key }}"{% endif %}><td class="lead wrap">{% if fixable and n %}<a href="#{{ key }}">{{ title }}</a>{% else %}{{ title }}{% endif %}
-  <div class="muted cause-text">{{ text }}</div></td>
-  <td class="n" data-label="Legs">{{ n|intcomma }}</td><td class="n" data-label="Share of all legs">{% widthratio share 1 100 %}%</td>
-  <td data-label="Fixable here">{% if fixable %}<span class="badge confirmed">yes</span>{% else %}<span class="muted">no</span>{% endif %}</td></tr>
+<tr class="head"><th>Category</th><th class="n">Legs</th><th class="n">Share of all legs</th><th class="n">Aircraft</th>
+  <th class="n" title="Median distance from where the leg ended to the nearest site">Nearest site (median)</th>
+  <th class="n" title="Median height above the ground where the leg ended">Height (median)</th><th>Most from</th><th>Fixable here</th></tr>
+{% for m in metrics %}
+<tr data-href="?{% if confirmed_only %}confirmed=1&amp;{% endif %}cat={{ m.key }}#legs"><td class="lead wrap"><a href="?{% if confirmed_only %}confirmed=1&amp;{% endif %}cat={{ m.key }}#legs">{{ m.title }}</a>
+  <div class="muted cause-text">{{ m.text }}</div></td>
+  <td class="n" data-label="Legs">{{ m.legs|intcomma }}</td><td class="n" data-label="Share of all legs">{% widthratio m.share 1 100 %}%</td>
+  <td class="n" data-label="Aircraft">{{ m.aircraft|intcomma }}</td>
+  <td class="n" data-label="Nearest site (median)">{{ m.median_nearest }}</td>
+  <td class="n" data-label="Height (median)">{% if m.median_agl_ft is not None %}{{ m.median_agl_ft|floatformat:0|intcomma }} ft{% else %}—{% endif %}</td>
+  <td data-label="Most from">{% if m.top_operator %}{{ m.top_operator }} <span class="muted">({{ m.top_operator_legs|intcomma }})</span>{% else %}—{% endif %}</td>
+  <td data-label="Fixable here">{% if m.fixable %}<span class="badge confirmed">yes</span>{% else %}<span class="muted">no</span>{% endif %}</td></tr>
 {% endfor %}
 </table></div>
 
@@ -58,6 +65,36 @@
   <td data-label="Nearest site">{% if c.nearest_site %}{{ c.nearest_site.name }} <span class="muted">· {{ c.nearest_site_distance_m|floatformat:0|intcomma }} m</span>{% else %}—{% endif %}</td></tr>
 {% empty %}<tr><td colspan="4" class="muted empty-row">No unmatched repeat spots.</td></tr>{% endfor %}
 </table></div>
+
+<h2 id="legs">Unresolved legs{% if cat_title %}: {{ cat_title }}{% endif %} <span class="muted" style="font-size:14px">({{ page.paginator.count|intcomma }})</span></h2>
+<form class="filters" method="get" action="#legs">
+  {% if confirmed_only %}<input type="hidden" name="confirmed" value="1">{% endif %}
+  <select name="cat" onchange="this.form.submit()"><option value="">All categories</option>{% for key, title in categories %}<option value="{{ key }}" {% if cat == key %}selected{% endif %}>{{ title }}</option>{% endfor %}</select>
+  <input type="hidden" name="sort" value="{{ sort }}">
+</form>
+<div class="scroll"><table class="stack">
+<tr class="head">
+  <th><a href="?{{ filter_qs }}&amp;sort={% if sort == '-date' %}date{% else %}-date{% endif %}#legs">Ended</a></th>
+  <th><a href="?{{ filter_qs }}&amp;sort={% if sort == 'category' %}-category{% else %}category{% endif %}#legs">Category</a></th>
+  <th><a href="?{{ filter_qs }}&amp;sort={% if sort == 'aircraft' %}-aircraft{% else %}aircraft{% endif %}#legs">Aircraft</a></th>
+  <th>How it ended</th>
+  <th class="n"><a href="?{{ filter_qs }}&amp;sort={% if sort == 'nearest' %}-nearest{% else %}nearest{% endif %}#legs">Nearest site</a></th>
+  <th class="n"><a href="?{{ filter_qs }}&amp;sort={% if sort == 'height' %}-height{% else %}height{% endif %}#legs">Height</a></th>
+  <th>Where</th>
+</tr>
+{% for r in page %}
+<tr{% if r.aircraft %} data-href="{% url 'aircraft_detail' r.aircraft_id %}"{% endif %}>
+  <td class="lead nowrap">{{ r.end_ts|date:"Y-m-d H:i" }}</td>
+  <td data-label="Category">{{ r.category_title }}</td>
+  <td data-label="Aircraft">{% if r.aircraft %}<a href="{% url 'aircraft_detail' r.aircraft_id %}">{{ r.aircraft.display_name }}</a>{% else %}—{% endif %}</td>
+  <td data-label="How it ended">{% if r.end_state == "signal_lost" %}signal lost{% elif r.end_state == "landing_inferred" %}landing inferred{% else %}landed{% endif %}</td>
+  <td class="n" data-label="Nearest site">{% if r.nearest_site %}<a href="{% url 'site_detail' r.nearest_site.pk %}">{{ r.nearest_site.name }}</a> <span class="muted nowrap">· {{ r.nearest_label }}</span>{% else %}<span class="muted">{{ r.nearest_label }}</span>{% endif %}</td>
+  <td class="n" data-label="Height">{% if r.agl_ft is not None %}{{ r.agl_ft|floatformat:0|intcomma }} ft{% else %}—{% endif %}</td>
+  <td data-label="Where"><a href="https://www.openstreetmap.org/?mlat={{ r.lat|stringformat:'.5f' }}&amp;mlon={{ r.lon|stringformat:'.5f' }}#map=16/{{ r.lat|stringformat:'.5f' }}/{{ r.lon|stringformat:'.5f' }}" target="_blank" rel="noopener">map ↗</a></td>
+</tr>
+{% empty %}<tr><td colspan="7" class="muted empty-row">No unresolved legs{% if cat_title %} in this category{% endif %}.</td></tr>{% endfor %}
+</table></div>
+{% include "tracker/_pager.html" %}
 
 <p class="muted">The other causes are expected: scene landings have no site by nature, and lost signal is a receiver
   coverage limit. The rate counts every leg, so it can never reach 100%.</p>

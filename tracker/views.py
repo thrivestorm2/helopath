@@ -38,7 +38,7 @@ from .models import (
 )
 from .operators import absorb_operator
 from .ops import queue_refresh
-from .resolution import diagnose, radius_suggestions
+from .resolution import CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, radius_suggestions
 from .rebuild_flag import flag_rebuild, rebuild_active, rebuild_progress, rebuild_queued
 from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
@@ -547,8 +547,33 @@ def unresolved(request):
                 "lat": f"{a.inferred_base_lat:.6f}", "lon": f"{a.inferred_base_lon:.6f}",
                 "radius_m": 300, "origin": "manual"})
             bases.append((a, n, add))
+    # Every unresolved leg, filterable and sortable by category (and date, aircraft, distance, height).
+    category = request.GET.get("cat", "")
+    rows = [r for r in d.rows if not category or r.category == category]
+    sorters = {
+        "category": lambda r: (CATEGORY_ORDER[r.category], -r.end_ts.timestamp()),
+        "date": lambda r: r.end_ts.timestamp(),
+        "aircraft": lambda r: (r.aircraft_id or 0, -r.end_ts.timestamp()),
+        "nearest": lambda r: (r.nearest_m is None, r.nearest_m or 0),
+        "height": lambda r: (r.agl_ft is None, r.agl_ft or 0),
+    }
+    sort = request.GET.get("sort", "-date")
+    key = sort.lstrip("-")
+    if key not in sorters:
+        sort, key = "-date", "date"
+    rows.sort(key=sorters[key], reverse=sort.startswith("-"))
+    page = Paginator(rows, 50).get_page(request.GET.get("page"))
+    names = Aircraft.objects.in_bulk({r.aircraft_id for r in page if r.aircraft_id})
+    for r in page:
+        r.aircraft = names.get(r.aircraft_id)
+    metrics = category_metrics(d)
+    operators = Operator.objects.in_bulk({m["top_operator_id"] for m in metrics if m["top_operator_id"]})
+    for m in metrics:
+        m["top_operator"] = operators.get(m["top_operator_id"])
     return render(request, "tracker/unresolved.html", {
-        "d": d, "buckets": d.buckets(), "bases": bases, "radius_rows": radius_suggestions(d),
+        "d": d, "metrics": metrics, "bases": bases, "radius_rows": radius_suggestions(d),
+        "page": page, "cat": category, "sort": sort, "categories": list(CATEGORY_TITLES.items()),
+        "cat_title": CATEGORY_TITLES.get(category, ""), "filter_qs": _filter_qs(request),
         "spots": [(c, n) for c, n in d.spots.most_common(15)],
         "confirmed_only": _confirmed_only(request),
     })

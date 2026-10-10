@@ -6,13 +6,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from tracker.models import Aircraft, LandingCluster, Leg, Site, WorkerState
-from tracker.resolution import diagnose, radius_suggestions
+from tracker.resolution import category_metrics, diagnose, radius_suggestions
 
 NOW = timezone.now() - timedelta(days=2)
 
 
-class UnresolvedTests(TestCase):
-    """One leg (or a few) per cause; checks each lands in the right bucket and the fixes offered."""
+class UnresolvedData(TestCase):
+    """One leg (or a few) per cause."""
 
     def setUp(self):
         self.hosp = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40.0, lon=-89.0,
@@ -39,6 +39,10 @@ class UnresolvedTests(TestCase):
 
         self.admin = User.objects.create_user("boss", password="x", is_staff=True)
         self.admin.groups.add(Group.objects.get(name="Admin"))
+
+
+class UnresolvedTests(UnresolvedData):
+    """Each cause lands in the right bucket, and the fixes offered."""
 
     def test_buckets(self):
         d = diagnose(Leg.objects.all(), "adsblol")
@@ -86,3 +90,35 @@ class UnresolvedTests(TestCase):
         self.assertNotContains(r, ">Add as site</a>")
         self.assertEqual(self.client.post(reverse("set_site_radius", args=[self.hosp.pk]),
                                           {"radius_m": 500}).status_code, 403)
+
+
+class UnresolvedCategoryTests(UnresolvedData):
+    """Per-category metrics and the leg list (same legs as UnresolvedTests)."""
+
+    def test_metrics(self):
+        m = {row["key"]: row for row in category_metrics(diagnose(Leg.objects.all(), "adsblol"))}
+        self.assertEqual([m[k]["legs"] for k in ("base_not_site", "near_site", "unmatched_spot", "one_off_landing",
+                                                 "lost_low", "lost_high")], [1, 3, 1, 1, 1, 1])
+        self.assertAlmostEqual(m["near_site"]["share"], 3 / 9)
+        self.assertEqual(m["near_site"]["aircraft"], 1)
+        self.assertEqual(m["near_site"]["median_nearest"], "667 m")  # middle of ~556, 667, 778 m
+        self.assertEqual(m["lost_high"]["median_agl_ft"], 4500 - 650)  # no site nearby: default ground height
+        self.assertEqual(m["one_off_landing"]["median_nearest"], "> 25 km")
+
+    def test_list_filter_and_sort_by_category(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("unresolved"), {"cat": "near_site"})
+        self.assertEqual(r.context["page"].paginator.count, 3)
+        self.assertContains(r, "Unresolved legs: Ended just outside a site&#x27;s radius")
+        self.assertEqual({row.category for row in r.context["page"]}, {"near_site"})
+        r = self.client.get(reverse("unresolved"), {"sort": "category"})
+        cats = [row.category for row in r.context["page"]]
+        self.assertEqual(cats, ["base_not_site", "near_site", "near_site", "near_site", "unmatched_spot",
+                                "one_off_landing", "lost_low", "lost_high"])  # in the table's order
+        r = self.client.get(reverse("unresolved"), {"sort": "-category"})
+        self.assertEqual([row.category for row in r.context["page"]][0], "lost_high")
+        r = self.client.get(reverse("unresolved"), {"sort": "nearest"})
+        self.assertEqual([row.category for row in r.context["page"]][:3], ["near_site"] * 3)
+        r = self.client.get(reverse("unresolved"), {"sort": "bogus"})
+        self.assertEqual(r.context["sort"], "-date")
+        self.assertContains(r, 'sort=category#legs">Category</a>')  # the category column header sorts
