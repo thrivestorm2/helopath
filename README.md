@@ -138,6 +138,10 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   it. They are records of their own: add them in the admin or by typing a name in a Review queue card (a new one
   takes that aircraft's operator), link aircraft to them, and open a program's page for its aircraft, missions and
   routes. Program pages count missions directly; flow aggregates and the CSV export stay per operator.
+- Rebuild banner: admins see "Rebuild needed…" at the top of every page after an edit that only applies on rebuild
+  (site saved or deactivated, weather hangar set) or after a deploy whose counting rules are newer than the last
+  rebuild queued. **Bump `PIPELINE_VERSION` in `tracker/inference/pipeline.py` with any change to legs, discovery,
+  missions or aggregates.** The banner's button queues the rebuild and clears it; it stays hidden while one waits.
 - Confirm/reject refreshes missions and aggregates immediately; site edits need a rebuild (queued button,
   processed nightly, or `manage.py rebuild`).
 

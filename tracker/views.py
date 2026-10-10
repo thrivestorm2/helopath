@@ -13,7 +13,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .inference.pipeline import local_day
@@ -36,6 +36,7 @@ from .models import (
     Site,
 )
 from .ops import queue_refresh
+from .rebuild_flag import flag_rebuild, rebuild_queued
 from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
 
@@ -407,10 +408,9 @@ def set_weather_hangar(request, pk):
     site.save(update_fields=["weather_hangar", "updated"])
     what = "the base itself" if hangar == site else hangar.name if hangar else None
     _log(request.user, site, f"Weather hangar set to {what or 'none'}")
-    messages.success(request, format_html(
-        "Weather hangar {}. Missions change after the next rebuild. "
-        '<a class="button" href="{}">Queue rebuild</a>',
-        f"set to {what}" if hangar else "cleared", reverse("queue_rebuild")))
+    flag_rebuild(f"weather hangar for {site.name}")
+    messages.success(request, f"Weather hangar {f'set to {what}' if hangar else 'cleared'}. "
+                              "Missions change after the next rebuild.")
     return redirect("site_detail", pk=site.pk)
 
 
@@ -708,8 +708,11 @@ def cluster_dismiss(request, pk):
 def queue_rebuild(request):
     if request.method == "POST":
         RebuildRequest.objects.create(source=request.POST.get("source", SOURCE), requested_by=request.user)
+        rebuild_queued()
         messages.success(request, "Rebuild queued; the background worker starts it within a minute.")
-        return redirect("dashboard")
+        nxt = request.POST.get("next", "")
+        safe = nxt.startswith("/") and url_has_allowed_host_and_scheme(nxt, {request.get_host()}, request.is_secure())
+        return redirect(nxt if safe else "dashboard")
     return render(request, "tracker/queue_rebuild.html", {
         "pending": RebuildRequest.objects.filter(processed_at__isnull=True).select_related("requested_by"),
     })
@@ -733,6 +736,8 @@ def operations(request):
             upload = request.FILES.get("upload")
             task = OpsTask.objects.create(kind=kind, requested_by=request.user,
                                           upload=upload.read() if upload and kind == OpsTask.SEED_SITES else None)
+            if kind == OpsTask.REBUILD:
+                rebuild_queued()
             _log(request.user, task, f"Queued task: {task.get_kind_display()}")
             messages.success(request, f"{task.get_kind_display()} queued. The worker picks it up within a minute.")
         return redirect("operations")

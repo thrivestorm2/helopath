@@ -103,3 +103,8 @@ table.flows .fac { position: sticky; left: 0; z-index: 1; background: var(--card
   box-shadow: 6px 0 6px -6px rgba(0, 0, 0, .25); }
 table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--card); box-shadow: -6px 0 6px -6px rgba(0, 0, 0, .25); }
 @media (max-width: 640px) { table.flows { font-size: 13px; } table.flows .fac { max-width: 120px; } }
+
+/* Admins: "rebuild needed" banner at the top of every page until a rebuild is queued */
+.rebuild-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  background: #fff4e0; border: 1px solid #f0c27a; color: #6b4300; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+.rebuild-banner form { margin: 0; }
