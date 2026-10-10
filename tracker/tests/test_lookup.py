@@ -36,6 +36,7 @@ class LookupTests(TestCase):
         self.assertEqual(links["Instagram"], "https://www.instagram.com/explore/tags/n911lf/")
         self.assertIn("nNumberTxt=911LF", links["FAA registry"])  # FAA wants the number without the N
         self.assertIn("%22N911LF%22", links["Google"])
+        self.assertNotIn("X", links)
 
     def test_suggestions(self):
         self.assertEqual(call_sign_suggestions(self.a, "adsblol"), [("LIFE3", 2), ("LIFEG3", 1)])  # tail left out

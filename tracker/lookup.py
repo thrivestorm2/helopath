@@ -21,7 +21,6 @@ def lookup_links(aircraft):
         ("Google", f"https://www.google.com/search?q={q}+helicopter"),
         ("Facebook", f"https://www.facebook.com/search/top?q={quote_plus(tail)}"),
         ("Instagram", f"https://www.instagram.com/explore/tags/{quote(tail.lower())}/"),
-        ("X", f"https://x.com/search?q={q}&f=live"),
         ("JetPhotos", f"https://www.jetphotos.com/registration/{quote(tail)}"),
         ("FlightAware", f"https://www.flightaware.com/resources/registration/{quote(tail)}"),
         ("FAA registry", f"https://registry.faa.gov/AircraftInquiry/Search/NNumberResult?nNumberTxt={quote(n)}"),
