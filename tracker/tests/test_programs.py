@@ -109,6 +109,25 @@ class ProgramTests(TestCase):
         self.assertEqual(r.status_code, 403)
         self.assertFalse(Program.objects.filter(name="X").exists())
 
+    def test_delete_program_keeps_its_aircraft(self):
+        admin = User.objects.create_user("boss", password="x", is_staff=True)
+        admin.groups.add(Group.objects.get(name="Admin"))
+        self.assertTrue(admin.has_perm("tracker.delete_program"))
+        self.assertFalse(admin.has_perm("tracker.delete_aircraft"))  # everything else stays deactivate-only
+        self.client.force_login(admin)
+        self.assertContains(self.client.get(reverse("program_detail", args=[self.program.pk])),
+                            f'href="{reverse("admin:tracker_program_delete", args=[self.program.pk])}"')
+        url = reverse("admin:tracker_program_delete", args=[self.program.pk])
+        self.assertContains(self.client.get(url), "Are you sure")
+        self.client.post(url, {"post": "yes"})
+        self.assertFalse(Program.objects.filter(pk=self.program.pk).exists())
+        self.a.refresh_from_db()
+        self.d.refresh_from_db()
+        self.assertIsNone(self.a.program)
+        self.assertEqual(self.a.operator, self.op)  # everything else about the aircraft is untouched
+        self.assertTrue(Aircraft.objects.filter(pk=self.d.pk).exists())
+        self.assertTrue(Operator.objects.filter(pk=self.op.pk).exists())
+
     def test_admin_pages(self):
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         r = self.client.get(reverse("admin:tracker_program_changelist"))
