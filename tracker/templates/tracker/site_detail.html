@@ -1,32 +1,32 @@
 {% extends "tracker/base.html" %}
 {% block content %}
 <h1>{{ site.name }}</h1>
-<p class="muted">{{ site.get_site_type_display }} · {{ site.city }}{% if site.state %}, {{ site.state }}{% endif %}
+<p class="muted site-meta">{{ site.get_site_type_display }}{% if site.city or site.state %} · {{ site.city }}{% if site.city and site.state %}, {% endif %}{{ site.state }}{% endif %}
   {% if site.faa_id %}· FAA {{ site.faa_id }}{% endif %} · radius {{ site.radius_m }} m ·
   {% if site.reviewed %}reviewed{% else %}not yet reviewed{% endif %}{% if not site.is_active %} · <strong>inactive</strong>{% endif %}
+  {% if site.weather_hangar_id or n_based %}<span id="hangar">· Weather hangar:
+    {% if site.weather_hangar_id == site.pk %}at this base
+    {% elif site.weather_hangar %}<a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>
+    {% elif hangar_suggestion %}<a href="{% url 'site_detail' hangar_suggestion.0.pk %}">{{ hangar_suggestion.0.name }}</a>
+      <span class="badge discovered" title="Not confirmed: aircraft based here started the day there {{ hangar_suggestion.1 }} times">suggested</span>
+      {% if is_admin %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="hangar" value="{{ hangar_suggestion.0.pk }}"><button class="link">confirm</button></form>
+      / <form method="post" action="{% url 'set_weather_hangar' site.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button class="link">at this base</button></form>{% endif %}
+    {% else %}not set{% if is_admin %} (<form method="post" action="{% url 'set_weather_hangar' site.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button class="link">at this base</button></form>){% endif %}{% endif %}</span>{% endif %}
   {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
-{% if n_based or site.weather_hangar %}
-<div class="card" id="hangar">
-  <h2 style="margin-top:0">Bad-weather hangar</h2>
-  {% if site.weather_hangar_id == site.pk %}
-  <p>Hangared at <a href="{% url 'site_detail' site.pk %}">{{ site.name }}</a> (the base itself).</p>
-  {% elif site.weather_hangar %}
-  <p><a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>
-    <span class="muted">· flights to and from it count like flights from the base</span></p>
-  {% else %}
-  <p>No weather hangar set for the {{ n_based }} aircraft based here.</p>
-  {% if is_admin %}<div class="actions"><form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button>Hangar is at this base</button></form></div>{% endif %}
-  {% if hangar_suggestions %}
-  <p class="muted">Airports where these aircraft started the day instead of here:</p>
-  <table class="stack"><tr class="head"><th>Airport</th><th class="n">Days started there</th><th class="n">Aircraft</th>{% if is_admin %}<th></th>{% endif %}</tr>
-  {% for s, days, n in hangar_suggestions %}
-  <tr><td class="lead"><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a>{% if s.faa_id %} <span class="muted">{{ s.faa_id }}</span>{% endif %}</td>
-    <td class="n" data-label="Days started there">{{ days }}</td><td class="n" data-label="Aircraft">{{ n }}</td>
-    {% if is_admin %}<td><form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ s.pk }}"><button>Use as weather hangar</button></form></td>{% endif %}</tr>
-  {% endfor %}</table>
-  {% else %}<p class="muted">No airport stands out yet as an overnight spot for them.{% if is_admin %} You can set one on the <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a> page.{% endif %}</p>{% endif %}
-  {% endif %}
+{% if site.site_type == "hospital_helipad" or flows.received or flows.sent %}
+<div class="card" id="patients">
+  <h2 style="margin-top:0">Patients received and sent <span class="muted" style="font-size:14px">(inferred)</span></h2>
+  <p><strong>{{ flows.received }}</strong> received <span class="muted">· {% if flows.from_scenes %}<a href="{{ flows.scene_map }}" class="map-link">{{ flows.from_scenes }} from scenes <span aria-hidden="true">⌖</span></a>{% else %}0 from scenes{% endif %} · {{ flows.from_hospitals }} from other hospitals</span>
+    &nbsp; <strong>{{ flows.sent }}</strong> sent <span class="muted">· to other hospitals</span></p>
+  <h3>Received from</h3>
+  {% include "tracker/_flow_table.html" with heading="From" rows=flows.received_rows months=flows.months n_months=flows.n_months empty_text="No patients received yet." %}
+  <h3>Sent to</h3>
+  {% include "tracker/_flow_table.html" with heading="To" rows=flows.sent_rows months=flows.months n_months=flows.n_months empty_text="No transfers out yet." %}
+  {% if flows.n_months > flows.months|length %}<p class="muted">Showing the latest {{ flows.months|length }} of {{ flows.n_months }} months; Avg (per month) and Total cover all {{ flows.n_months }}.</p>{% endif %}
+  <p class="muted">Counted from inferred missions: a scene or another hospital followed by a landing here is a patient
+    received; a landing here followed by another hospital is a patient sent.{% if flows.unresolved %}
+    {{ flows.unresolved }} visit{{ flows.unresolved|pluralize }} where the direction is unknown {{ flows.unresolved|pluralize:"is,are" }} not counted.{% endif %}</p>
 </div>
 {% endif %}
 <h2>Arrivals by operator and month ({{ total }} total)</h2>
@@ -38,6 +38,10 @@
 <div id="map" class="card" style="padding:0;margin-top:14px;height:360px"></div>
 {% endblock %}
 {% block scripts %}
+<script>
+// Flow tables open scrolled to the newest months (the name and Avg columns stay pinned).
+document.querySelectorAll('.flows-scroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
+</script>
 <script>
 const map = L.map('map', {zoomSnap: 0.25}).setView([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], 15);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);

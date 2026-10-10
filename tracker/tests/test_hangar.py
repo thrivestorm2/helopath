@@ -150,38 +150,39 @@ class SiteHangarPageTests(TestCase):
     def test_admin_sets_and_clears_suggested_hangar(self):
         self.client.force_login(self.admin)
         url = reverse("site_detail", args=[self.base.pk])
+        set_url = reverse("set_weather_hangar", args=[self.base.pk])
         r = self.client.get(url)
-        self.assertContains(r, "Bad-weather hangar")
-        self.assertContains(r, "No weather hangar set for the 1 aircraft based here.")
-        self.assertContains(r, "Use as weather hangar")
-        r = self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": self.airport.pk},
-                             follow=True)
+        # One line in the page header, not a box: the top suggestion with confirm / at this base.
+        self.assertContains(r, '<span id="hangar">· Weather hangar:')
+        self.assertContains(r, f'<a href="{reverse("site_detail", args=[self.airport.pk])}">Airport KPIA</a>')
+        self.assertContains(r, ">suggested</span>")
+        self.assertContains(r, '<button class="link">confirm</button>')
+        self.assertNotContains(r, 'class="card" id="hangar"')
+        r = self.client.post(set_url, {"hangar": self.airport.pk}, follow=True)
         self.assertContains(r, "Weather hangar set to Airport KPIA")
         self.assertContains(r, reverse("queue_rebuild"))
         self.base.refresh_from_db()
         self.assertEqual(self.base.weather_hangar, self.airport)
-        # Once set, the card only names the hangar (with a link); changes are made on the admin Edit page.
+        # Once set, the header only names it (with a link); changes are made on the admin Edit page.
         self.assertContains(r, f'<a href="{reverse("site_detail", args=[self.airport.pk])}">Airport KPIA</a>')
-        for gone in ("Use as weather hangar", "Hangar is at this base</button>", "Clear</button>",
-                     "Days started there"):
+        for gone in (">suggested</span>", ">confirm</button>", ">at this base</button>"):
             self.assertNotContains(r, gone)
-        self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": ""})
+        self.client.post(set_url, {"hangar": ""})
         self.base.refresh_from_db()
         self.assertIsNone(self.base.weather_hangar)
-        r = self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": self.base.pk}, follow=True)
+        r = self.client.post(set_url, {"hangar": self.base.pk}, follow=True)
         self.base.refresh_from_db()
         self.assertEqual(self.base.weather_hangar, self.base)  # hangared at the base itself
         self.assertContains(r, "Weather hangar set to the base itself")
-        self.assertContains(r, "(the base itself)")
-        self.assertNotContains(r, "Use as weather hangar")  # no suggestions once settled
-        self.assertNotContains(r, "Hangar is at this base</button>")
-        self.assertNotContains(r, "Clear</button>")
+        self.assertContains(r, "Weather hangar:\n    at this base")
+        self.assertNotContains(r, ">at this base</button>")
+        self.assertNotContains(r, ">suggested</span>")
 
     def test_viewers_see_but_cannot_set(self):
         self.client.force_login(self.viewer)
         r = self.client.get(reverse("site_detail", args=[self.base.pk]))
         self.assertContains(r, "Airport KPIA")
-        self.assertNotContains(r, "Use as weather hangar")
+        self.assertNotContains(r, ">confirm</button>")
         r = self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": self.airport.pk})
         self.assertEqual(r.status_code, 403)
 
