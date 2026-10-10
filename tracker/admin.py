@@ -118,6 +118,8 @@ class OperatorAdmin(ReturnToPageMixin, ImportExportModelAdmin):
 
 @admin.register(Program)
 class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
+    """Programs can be deleted: their aircraft are kept and simply have no program (Aircraft.program is SET_NULL)."""
+
     list_display = ("name", "operator", "aircraft_count")
     list_filter = ("operator",)
     search_fields = ("name", "operator__name")
@@ -129,9 +131,6 @@ class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     @admin.display(description="Aircraft", ordering="n_aircraft")
     def aircraft_count(self, obj):
         return obj.n_aircraft
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(Aircraft)
