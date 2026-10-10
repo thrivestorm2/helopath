@@ -33,8 +33,12 @@
 <main>
   {% if rebuild_banner %}{% if rebuild_banner.0 == "running" %}
   <div class="rebuild-banner running" role="status" data-status-url="{% url 'rebuild_status' %}">
-    <span class="spinner" aria-hidden="true"></span>
     <span>Rebuild in progress: <strong class="rebuild-step">{{ rebuild_banner.1 }}</strong>. Figures are incomplete until it finishes.</span>
+    <div class="rebuild-progress">
+      <span class="spinner" aria-hidden="true"></span>
+      <div class="bar" role="progressbar" aria-label="Rebuild progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ rebuild_banner.2 }}"><div class="fill" style="width:{{ rebuild_banner.2 }}%"></div></div>
+      <span class="pct">{{ rebuild_banner.2 }}%</span>
+    </div>
   </div>{% else %}
   <div class="rebuild-banner" role="status">
     <span>Rebuild needed to apply recent changes: {{ rebuild_banner.1 }}.</span>
@@ -61,7 +65,14 @@ document.addEventListener('click', function (e) {
   const banner = document.querySelector('.rebuild-banner.running');
   const step = banner.querySelector('.rebuild-step');
   const poll = () => fetch(banner.dataset.statusUrl, {credentials: 'same-origin'}).then(r => r.json()).then(s => {
-    if (s.active) { step.textContent = s.step; setTimeout(poll, 8000); return; }
+    if (s.active) {
+      step.textContent = s.step;
+      banner.querySelector('.fill').style.width = s.percent + '%';
+      banner.querySelector('.bar').setAttribute('aria-valuenow', s.percent);
+      banner.querySelector('.pct').textContent = s.percent + '%';
+      setTimeout(poll, 8000);
+      return;
+    }
     banner.classList.remove('running');
     banner.innerHTML = '<span>Rebuild finished.</span> <a class="button" href="">Reload to see updated figures</a>';
   }).catch(() => setTimeout(poll, 30000));

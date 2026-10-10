@@ -109,7 +109,11 @@ table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--car
 .rebuild-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   background: #fff4e0; border: 1px solid #f0c27a; color: #6b4300; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
 .rebuild-banner form { margin: 0; }
-.rebuild-banner.running { background: #e8f0fe; border-color: #a8c3f0; color: #1a3d7c; justify-content: flex-start; }
+.rebuild-banner.running { background: #e8f0fe; border-color: #a8c3f0; color: #1a3d7c; flex-direction: column; align-items: stretch; gap: 8px; }
+.rebuild-progress { display: flex; align-items: center; gap: 10px; }
+.rebuild-progress .bar { flex: 1; height: 8px; border-radius: 4px; background: #c9daf8; overflow: hidden; }
+.rebuild-progress .fill { height: 100%; background: #1a56c4; border-radius: 4px; transition: width .6s ease; }
+.rebuild-progress .pct { font-variant-numeric: tabular-nums; min-width: 3em; text-align: right; font-weight: 600; }
 .rebuild-banner .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
   border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }

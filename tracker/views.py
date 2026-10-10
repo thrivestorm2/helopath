@@ -39,7 +39,7 @@ from .models import (
 from .operators import absorb_operator
 from .ops import queue_refresh
 from .resolution import CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, radius_suggestions
-from .rebuild_flag import flag_rebuild, rebuild_active, rebuild_progress, rebuild_queued
+from .rebuild_flag import flag_rebuild, progress_percent, rebuild_active, rebuild_progress, rebuild_queued
 from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
 
@@ -797,20 +797,18 @@ def cluster_dismiss(request, pk):
 
 @admin_required
 def rebuild_status(request):
-    """For the progress banner: {"active": bool, "step": what the rebuild is doing}."""
+    """For the progress banner: {"active": bool, "step": what the rebuild is doing, "percent": 0-100}."""
     step = rebuild_progress()
-    return JsonResponse({"active": step is not None, "step": step or ""})
+    return JsonResponse({"active": step is not None, "step": step or "",
+                         "percent": progress_percent(step) if step else 100})
 
 
 @admin_required
 def queue_rebuild(request):
     if request.method == "POST":
-        if rebuild_active():  # a second click, or another admin got there first
-            messages.info(request, "A rebuild is already queued or running; the banner shows its progress.")
-        else:
+        if not rebuild_active():  # a second click, or another admin got there first: the banner already shows it
             RebuildRequest.objects.create(source=request.POST.get("source", SOURCE), requested_by=request.user)
-            messages.success(request, "Rebuild queued; the background worker starts it within a minute.")
-        rebuild_queued()
+        rebuild_queued()  # no message: the progress banner says it all
         nxt = request.POST.get("next", "")
         safe = nxt.startswith("/") and url_has_allowed_host_and_scheme(nxt, {request.get_host()}, request.is_secure())
         return redirect(nxt if safe else "dashboard")
