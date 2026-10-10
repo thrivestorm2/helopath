@@ -47,6 +47,9 @@ class SiteMapTests(TestCase):
         self.assertEqual(m["OSF St Francis"]["info"][:3], ["0 landings in the last 90 days",
                                                            "Also a base · 1 aircraft: N2PH", "PHI"])
         self.assertIn("Hangar: at the base", m["OSF St Francis"]["info"])
+        self.assertTrue(m["OSF St Francis"]["base_too"])  # drawn as a base when only Bases is on
+        self.assertNotIn("base_too", m["Carle"])
+        self.assertFalse(m["Base One"]["base_too"])
         self.assertEqual(m["Airport KPIA"]["info"], ["Weather hangar for Base One"])
         self.assertEqual(m["Carle"]["info"], ["1 landing in the last 90 days"])
         self.assertEqual(m["Carle"]["url"], reverse("site_detail", args=[self.carle.pk]))

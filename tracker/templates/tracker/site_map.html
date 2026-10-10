@@ -43,12 +43,15 @@
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   const touch = window.matchMedia('(hover: none)').matches;
-  const layers = {base: L.featureGroup(), hospital: L.featureGroup(), hangar: L.featureGroup()};
+  // A hospital that is also a base: hospital pin while Hospitals is on; base pin when only Bases is on;
+  // hidden when both are off (see apply()).
+  const layers = {base: L.featureGroup(), hospital: L.featureGroup(), hangar: L.featureGroup(),
+                  hospitalBase: L.featureGroup()};
   const z = {hospital: 0, hangar: 500, base: 1000};  // bases on top
-  markers.forEach(m => {
-    const icon = L.divIcon({className: '', html: `<span class="pin ${m.kind}"></span>`, iconSize: [20, 20], iconAnchor: [10, 10]});
+  const pin = (m, kind, group) => {
+    const icon = L.divIcon({className: '', html: `<span class="pin ${kind}"></span>`, iconSize: [20, 20], iconAnchor: [10, 10]});
     const info = `<strong>${esc(m.name)}</strong>` + m.info.map(i => `<br>${esc(i)}`).join('');
-    const mk = L.marker([m.lat, m.lon], {icon, title: m.name, zIndexOffset: z[m.kind], keyboard: true});
+    const mk = L.marker([m.lat, m.lon], {icon, title: m.name, zIndexOffset: z[kind], keyboard: true});
     if (touch) {
       // No hover on phones: the first tap shows the details with a link to the page.
       mk.bindPopup(info + `<br><a href="${esc(m.url)}">Open page →</a>`);
@@ -59,7 +62,11 @@
         else window.location.href = m.url;
       });
     }
-    mk.addTo(layers[m.kind]);
+    mk.addTo(layers[group]);
+  };
+  markers.forEach(m => {
+    pin(m, m.kind, m.kind);
+    if (m.base_too) pin(m, 'base', 'hospitalBase');
   });
   // Coverage: a grid of received-position squares, fetched the first time it is turned on.
   layers.coverage = L.layerGroup();
@@ -95,6 +102,8 @@
   };
   const apply = refit => {
     boxes.forEach(cb => { cb.checked ? layers[cb.value].addTo(map) : map.removeLayer(layers[cb.value]); });
+    const on = kind => document.querySelector(`.map-toggle input[value=${kind}]`).checked;
+    on('base') && !on('hospital') ? layers.hospitalBase.addTo(map) : map.removeLayer(layers.hospitalBase);
     const cov = document.querySelector('.map-toggle input[value=coverage]').checked;
     legend.hidden = !cov;
     if (cov) loadCoverage();
