@@ -168,6 +168,25 @@ class SiteHangarPageTests(TestCase):
         r = self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": self.airport.pk})
         self.assertEqual(r.status_code, 403)
 
+    def test_aircraft_page_shows_hangar_from_base(self):
+        url = reverse("aircraft_detail", args=[self.a.pk])
+        confirm = f'href="{reverse("site_detail", args=[self.base.pk])}#hangar">Confirm on base page</a>'
+        self.client.force_login(self.viewer)
+        r = self.client.get(url)
+        self.assertContains(r, ">Airport KPIA</a>")
+        self.assertContains(r, "suggested, not confirmed")
+        self.assertNotContains(r, confirm)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(url), confirm)
+        self.base.weather_hangar = self.airport
+        self.base.save()
+        r = self.client.get(url)
+        self.assertContains(r, ">Airport KPIA</a>")
+        self.assertNotContains(r, "suggested, not confirmed")
+        # No base, no hangar.
+        Aircraft.objects.filter(pk=self.a.pk).update(base=None)
+        self.assertContains(self.client.get(url), "<tr><th>Weather hangar</th><td>—</td></tr>")
+
     def test_admin_form_has_hangar_field(self):
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         r = self.client.get(reverse("admin:tracker_site_change", args=[self.base.pk]))
