@@ -55,6 +55,24 @@ class ProgramTests(TestCase):
         self.assertContains(r, link)
         self.assertContains(r, f'<option value="{self.program.pk}" >OSF Life Flight</option>')
 
+    def test_operator_page_groups_aircraft_by_program(self):
+        Aircraft.objects.create(tail_number="N4NP", icao_hex="a00004", status=Aircraft.CONFIRMED, operator=self.op)
+        Program.objects.create(name="Air Angels", operator=self.op)  # no aircraft yet
+        r = self.client.get(reverse("operator_detail", args=[self.op.pk]))
+        self.assertContains(r, "Aircraft by program")
+        body = r.content.decode()
+        order = [body.index(s) for s in (">Air Angels</a>", ">OSF Life Flight</a>", "N1LF", "No program", "N4NP")]
+        self.assertEqual(order, sorted(order))  # programs by name, each followed by its aircraft; no program last
+        self.assertContains(r, "No aircraft in this program.")
+        # An operator without programs keeps the plain list.
+        plain = Operator.objects.create(name="Air Evac Lifeteam")
+        self.other.operator = plain
+        self.other.save()
+        r = self.client.get(reverse("operator_detail", args=[plain.pk]))
+        self.assertNotContains(r, "by program")
+        self.assertNotContains(r, "No program")
+        self.assertContains(r, "N3XX")
+
     def test_aircraft_list_program_filter_and_search(self):
         r = self.client.get(reverse("aircraft_list") + f"?program={self.program.pk}")
         self.assertContains(r, "N1LF")

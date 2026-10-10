@@ -69,3 +69,7 @@ tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
 
 .suggestion details { margin-top: 2px; }
 @media (max-width: 640px) { table.stack td .suggestion { text-align: right; max-width: 70%; } }
+
+/* Operator page: aircraft grouped by program */
+h3.program-group { font-size: 15px; margin: 16px 0 6px; }
+h3.program-group:first-of-type { margin-top: 4px; }

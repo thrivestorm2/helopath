@@ -225,8 +225,15 @@ def program_detail(request, pk):
 
 def operator_detail(request, pk):
     operator = get_object_or_404(Operator, pk=pk)
-    aircraft = (Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
-                .select_related("base", "inferred_base").order_by("tail_number"))
+    aircraft = list(Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
+                    .select_related("program", "base", "inferred_base").order_by("tail_number"))
+    # Aircraft grouped by program: the operator's programs (even with no aircraft shown) by name, then any other
+    # program its aircraft carry, then those with none. Only grouped when there is a program to group by.
+    groups = {p: [] for p in operator.programs.all()}
+    for a in aircraft:
+        groups.setdefault(a.program, []).append(a)
+    named = sorted((p for p in groups if p), key=lambda p: p.name.lower())
+    program_groups = [(p, groups[p]) for p in named] + ([(None, groups[None])] if groups.get(None) else [])
     aggs = MonthlyAggregate.objects.filter(source=SOURCE, operator=operator,
                                            includes_unreviewed=not _confirmed_only(request))
     labels = [code for code, _ in Mission.LABELS]
@@ -250,7 +257,7 @@ def operator_detail(request, pk):
         "total": sum(sum(c.values()) for c in per_month.values()),
         "flows": flows.most_common(15),
         "bases": [(pk, base_names[pk], n) for pk, n in bases.most_common()],
-        "programs": operator.programs.all(),
+        "program_groups": program_groups if named else [],
         "confirmed_only": _confirmed_only(request),
     })
 
