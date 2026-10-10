@@ -93,3 +93,60 @@ class SiteMapTests(TestCase):
         self.assertNotContains(r, "</script><b>x")
         data = r.content.decode().split('id="map-markers" type="application/json">')[1].split("</script>")[0]
         self.assertIn('</script><b>x', [m["name"] for m in json.loads(data)])
+
+
+class UnaddedSpotTests(TestCase):
+    def setUp(self):
+        from tracker.models import LandingCluster, PlaceSuggestion
+        now = timezone.now()
+        self.near = Site.objects.create(name="Carle", site_type=Site.HOSPITAL, lat=40.1, lon=-88.2)
+        self.spot = LandingCluster.objects.create(source="adsblol", lat=40.2, lon=-88.3, landing_count=40,
+                                                  distinct_aircraft=3, first_seen=now, last_seen=now,
+                                                  nearest_site=self.near, nearest_site_distance_m=13900)
+        LandingCluster.objects.create(source="adsblol", lat=40.5, lon=-88.5, landing_count=9, distinct_aircraft=1,
+                                      first_seen=now, last_seen=now, dismissed=True)
+        PlaceSuggestion.objects.create(lat3="40.200", lon3="-88.300", name="Rantoul Helipad", city="Rantoul",
+                                       candidates=[{"name": "Rantoul Helipad"}])
+        self.admin = User.objects.create_user("boss", password="x", is_staff=True)
+        self.admin.groups.add(Group.objects.get(name="Admin"))
+
+    def spots(self):
+        r = self.client.get(reverse("site_map"), {"f": 1, "show": "spot"})
+        return [m for m in r.context["markers"] if m["kind"] == "spot"], r
+
+    def test_admin_can_add_from_the_map(self):
+        self.client.force_login(self.admin)
+        spots, r = self.spots()
+        self.assertEqual(len(spots), 1)  # dismissed spots are left out
+        s = spots[0]
+        self.assertIn("40 landings by 3 aircraft", s["info"])
+        self.assertIn("Nearest site: Carle (13,900 m)", s["info"])
+        self.assertIn("Looks like: Rantoul Helipad, Rantoul", s["info"])
+        self.assertIn("name=Rantoul+Helipad", s["url"])
+        self.assertIn("site_type=hospital_helipad", s["url"])
+        self.assertIn("next=%2Fmap%2F%3Ff%3D1%26show%3Dspot", s["url"])
+        self.assertContains(r, 'name="show" value="spot" checked')
+        self.assertContains(r, "Unadded spots <span class=\"muted\">(1)</span>")
+        # Saving the pre-filled form returns to the map, and the spot is gone (a site now covers it).
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        form = self.client.get(s["url"])
+        self.assertEqual(form.status_code, 200)
+        data = {k: v for k, v in form.context["adminform"].form.initial.items() if v is not None}
+        data.update({"elevation_ft": 0, "is_active": "on", "_save": "Save"})
+        r = self.client.post(s["url"], data)
+        self.assertRedirects(r, "/map/?f=1&show=spot", fetch_redirect_response=False)
+        self.assertTrue(Site.objects.filter(name="Rantoul Helipad", site_type=Site.HOSPITAL).exists())
+        self.assertEqual(self.spots()[0], [])
+
+    def test_viewer_sees_spots_without_add_link(self):
+        viewer = User.objects.create_user("v", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        spots, _ = self.spots()
+        self.assertIsNone(spots[0]["url"])
+        self.assertNotIn("Click to add it as a site", spots[0]["info"])
+
+    def test_off_by_default(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("site_map"))
+        self.assertNotIn("spot", r.context["shown"])

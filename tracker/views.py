@@ -20,6 +20,7 @@ from django.views.decorators.http import require_POST
 
 from .inference.pipeline import local_day
 from . import places
+from .geo import SiteIndex
 from .hangars import based_aircraft, suggest_hangars
 from .lookup import call_sign_suggestions, lookup_links, program_suggestions
 from .models import (
@@ -770,26 +771,37 @@ def cluster_queue(request):
     from django.conf import settings as dj_settings
 
     clusters = list(LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site"))
-    known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
     busy = dj_settings.PLACE_LOOKUP_MIN_LANDINGS
-    def add_site_url(c, name, city="", state="", site_type=Site.BASE):
-        return reverse("admin:tracker_site_add") + "?" + urlencode({
-            "lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
-            "site_type": site_type, "name": name, "city": city, "state": state})
+    _add_site_links(clusters)
+    return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy})
 
+
+def _cluster_add_site_url(c, name, city="", state="", site_type=Site.BASE, next_url=None):
+    params = {"lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
+              "site_type": site_type, "name": name, "city": city, "state": state}
+    if next_url:
+        params["next"] = next_url
+    return reverse("admin:tracker_site_add") + "?" + urlencode(params)
+
+
+def _add_site_links(clusters, next_url=None):
+    """Give each cluster `suggestion` (an OpenStreetMap name, if looked up), `create_url` (the admin's new-site
+    form pre-filled for it) and `alternatives` [(candidate, url)]."""
+    known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
+    busy = settings.PLACE_LOOKUP_MIN_LANDINGS
     for c in clusters:
         c.lookup_wanted = c.landing_count > busy
         c.suggestion = known.get(places.location_key(c.lat, c.lon)) if c.lookup_wanted else None
         if c.suggestion is not None and c.suggestion.name:
             # Choosing a suggested hospital or helipad makes the new site a hospital helipad.
             s = c.suggestion
-            c.create_url = add_site_url(c, s.name, s.city, s.state, Site.HOSPITAL)
-            c.alternatives = [(cand, add_site_url(c, cand["name"], cand.get("city", ""), cand.get("state", ""),
-                                                  Site.HOSPITAL)) for cand in s.candidates[1:]]
+            c.create_url = _cluster_add_site_url(c, s.name, s.city, s.state, Site.HOSPITAL, next_url)
+            c.alternatives = [(cand, _cluster_add_site_url(c, cand["name"], cand.get("city", ""),
+                                                           cand.get("state", ""), Site.HOSPITAL, next_url))
+                              for cand in s.candidates[1:]]
         else:
-            c.create_url = add_site_url(c, f"Cluster {c.lat:.4f},{c.lon:.4f}")
+            c.create_url = _cluster_add_site_url(c, f"Cluster {c.lat:.4f},{c.lon:.4f}", next_url=next_url)
             c.alternatives = []
-    return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy})
 
 
 @require_POST
@@ -874,7 +886,7 @@ def operations(request):
 
 
 MAP_KINDS = ("base", "hospital", "hangar")
-MAP_LAYERS = (*MAP_KINDS, "coverage")  # coverage is off unless asked for
+MAP_LAYERS = (*MAP_KINDS, "spot", "coverage")  # spots and coverage are off unless asked for
 
 
 def site_map(request):
@@ -941,14 +953,46 @@ def site_map(request):
     for s in hospitals.order_by("name"):
         markers.append(marker("hospital", s, [landings_line(s)]))
 
+    markers += _spot_markers(request)
     shown = [k for k in MAP_LAYERS if k in get.getlist("show")] if "f" in get else list(MAP_KINDS)
     counts = Counter(m["kind"] for m in markers)
     return render(request, "tracker/site_map.html", {
-        "markers": markers, "shown": shown, "counts": [(k, counts[k]) for k in MAP_KINDS],
+        "markers": markers, "shown": shown, "counts": [(k, counts[k]) for k in MAP_KINDS], "n_spots": counts["spot"],
         "operators": Operator.objects.order_by("name"), "programs": Program.objects.select_related("operator"),
         "operator": operator, "program": program, "confirmed_only": _confirmed_only(request),
         "coverage_days": settings.COVERAGE_DAYS,
     })
+
+
+def _short_date(d):
+    return f"{d:%b} {d.day}, {d.year}"
+
+
+def _spot_markers(request):
+    """Repeat landing spots that are not sites yet (the Cluster queue), for the map's "Unadded spots" layer.
+    Admins get a link to the new-site form pre-filled for the spot, returning to the map after saving."""
+    sites = SiteIndex(Site.objects.filter(is_active=True))
+    clusters = [c for c in LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site")
+                if not any(d <= s.radius_m for d, s in sites.within(c.lat, c.lon, 2000))]  # added since last refresh
+    admin = is_admin(request.user)
+    if admin:
+        _add_site_links(clusters, next_url=request.get_full_path())
+    out = []
+    for c in clusters:
+        info = [f"Repeat landing spot, not a site yet",
+                f"{c.landing_count:,} landings by {c.distinct_aircraft} aircraft",
+                f"Last seen {_short_date(local_day(c.last_seen))}"]
+        if c.nearest_site:
+            info.append(f"Nearest site: {c.nearest_site.name} ({c.nearest_site_distance_m:,.0f} m)")
+        suggestion = getattr(c, "suggestion", None)
+        if suggestion is not None and suggestion.name:
+            info.append(f"Looks like: {suggestion.name}" + (f", {suggestion.city}" if suggestion.city else ""))
+        if admin:
+            info.append("Click to add it as a site")
+        out.append({"kind": "spot", "name": f"Spot {c.lat:.4f}, {c.lon:.4f}", "lat": round(c.lat, 5),
+                    "lon": round(c.lon, 5), "url": c.create_url if admin else None, "info": info,
+                    "link": "Add as site →"})
+    return out
 
 
 def coverage_data(request):
