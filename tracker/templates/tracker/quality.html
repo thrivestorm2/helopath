@@ -10,6 +10,8 @@
   <div class="card stat"><div class="k">{{ label }}</div><div class="v">{% widthratio share 1 100 %}%</div><div class="muted">{{ n|intcomma }} legs</div></div>
   {% endfor %}
   <div class="card stat"><div class="k">Active sites not yet reviewed</div><div class="v">{{ unreviewed_sites }}</div></div>
+  <div class="card stat"><div class="k">Coverage gaps rejoined</div><div class="v">{{ gaps_rejoined|intcomma }}</div>
+    <div class="muted">flights split by lost signal, joined back by matching heading and speed</div></div>
 </div>
 
 <h2>End state by base</h2>

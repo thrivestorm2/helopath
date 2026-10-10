@@ -34,7 +34,7 @@
 <tr>
   <td>{{ leg.start_ts|date:"Y-m-d H:i" }}</td><td>{{ leg.end_ts|date:"H:i" }}</td>
   <td>{{ leg.start_site.name|default:"—" }}</td><td>{{ leg.end_site.name|default:"—" }}</td>
-  <td>{{ leg.get_end_state_display }}</td><td class="n">{{ leg.confidence|floatformat:2 }}</td>
+  <td>{{ leg.get_end_state_display }}{% if leg.gaps_bridged %} <span class="muted" title="Signal was lost and regained mid-flight; the pieces were joined">· {{ leg.gaps_bridged }} gap{{ leg.gaps_bridged|pluralize }} rejoined</span>{% endif %}</td><td class="n">{{ leg.confidence|floatformat:2 }}</td>
   <td>{% if leg.mission %}{{ leg.mission.get_label_display }}{% endif %}</td>
   <td><button type="button" onclick="showLeg({{ leg.pk }})">Map</button></td>
 </tr>
