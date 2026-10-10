@@ -869,3 +869,73 @@ def operations(request):
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
         "nightly_at": f"{dj_settings.NIGHTLY_UTC_HOUR:02d}:{dj_settings.NIGHTLY_UTC_MINUTE:02d} UTC",
     })
+
+
+MAP_KINDS = ("base", "hospital", "hangar")
+
+
+def site_map(request):
+    """Full-page map of bases, hospitals and weather hangars, optionally for one operator and/or program."""
+    get = request.GET
+    operator = Operator.objects.filter(pk=get["operator"]).first() if get.get("operator", "").isdigit() else None
+    program = Program.objects.filter(pk=get["program"]).first() if get.get("program", "").isdigit() else None
+    filtered = bool(operator or program)
+    aircraft = Aircraft.objects.filter(status__in=_statuses(request)).select_related("operator")
+    legs = medical_legs(request, days=90)
+    if operator:
+        aircraft, legs = aircraft.filter(operator=operator), legs.filter(aircraft__operator=operator)
+    if program:
+        aircraft, legs = aircraft.filter(program=program), legs.filter(aircraft__program=program)
+
+    based = defaultdict(list)  # site pk -> aircraft based there
+    for a in aircraft.order_by(Aircraft.sort_name()):
+        if a.base_id or a.inferred_base_id:
+            based[a.base_id or a.inferred_base_id].append(a)
+    base_q = Q(pk__in=list(based)) if filtered else Q(pk__in=list(based)) | Q(site_type=Site.BASE, is_active=True)
+    bases = {s.pk: s for s in Site.objects.filter(base_q).select_related("weather_hangar")}
+    hangar_for = defaultdict(list)  # hangar site pk -> bases it serves (other than itself)
+    for s in bases.values():
+        if s.weather_hangar_id and s.weather_hangar_id != s.pk:
+            hangar_for[s.weather_hangar_id].append(s)
+    hangars = {s.pk: s for s in Site.objects.filter(pk__in=list(hangar_for)).exclude(pk__in=list(bases))}
+    landings = dict(legs.filter(end_site__site_type=Site.HOSPITAL).values_list("end_site").annotate(n=Count("pk")))
+    hospital_q = Q(pk__in=list(landings)) if filtered else Q(site_type=Site.HOSPITAL, is_active=True)
+    hospitals = Site.objects.filter(hospital_q).exclude(pk__in=[*bases, *hangars])
+
+    def place(s):
+        return ", ".join(p for p in (s.city, s.state) if p)
+
+    def marker(kind, s, info):
+        return {"kind": kind, "name": s.name, "lat": round(s.lat, 5), "lon": round(s.lon, 5),
+                "url": reverse("site_detail", args=[s.pk]), "info": [i for i in [place(s), *info] if i]}
+
+    markers = []
+    for s in sorted(bases.values(), key=lambda s: s.name):
+        crew = based.get(s.pk, [])
+        names = [a.display_name for a in crew[:6]] + ([f"+{len(crew) - 6} more"] if len(crew) > 6 else [])
+        operators = sorted({a.operator.name for a in crew if a.operator})
+        info = [f"Base · {len(crew)} aircraft" + (f": {', '.join(names)}" if names else ""),
+                ", ".join(operators)]
+        if s.site_type != Site.BASE:
+            info.append(f"Also a {s.get_site_type_display().lower()}")
+        if s.weather_hangar_id == s.pk:
+            info.append("Hangar: at the base")
+        elif s.weather_hangar_id:
+            info.append(f"Weather hangar: {s.weather_hangar.name}")
+        if hangar_for.get(s.pk):
+            info.append("Also weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk]))
+        markers.append(marker("base", s, info))
+    for s in sorted(hangars.values(), key=lambda s: s.name):
+        markers.append(marker("hangar", s, ["Weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk])]))
+    for s in hospitals.order_by("name"):
+        n = landings.get(s.pk, 0)
+        markers.append(marker("hospital", s, [f"{n:,} landing{'s' if n != 1 else ''} in the last 90 days"
+                                              + (" by these aircraft" if filtered else "")]))
+
+    shown = [k for k in MAP_KINDS if k in get.getlist("show")] if "f" in get else list(MAP_KINDS)
+    counts = Counter(m["kind"] for m in markers)
+    return render(request, "tracker/site_map.html", {
+        "markers": markers, "shown": shown, "counts": [(k, counts[k]) for k in MAP_KINDS],
+        "operators": Operator.objects.order_by("name"), "programs": Program.objects.select_related("operator"),
+        "operator": operator, "program": program, "confirmed_only": _confirmed_only(request),
+    })

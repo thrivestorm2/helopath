@@ -13,24 +13,26 @@
 <header>
   <a class="brand" href="{% url 'dashboard' %}">Air Medical Tracker</a>
   {% with n=request.resolver_match.url_name %}
-  <a href="{% url 'dashboard' %}" class="{% if n == 'dashboard' %}active{% endif %}">Dashboard</a>
+  <nav class="menu">
+  <a href="{% url 'dashboard' %}" class="home {% if n == 'dashboard' %}active{% endif %}">Dashboard</a>
+  <a href="{% url 'site_map' %}" class="{% if n == 'site_map' %}active{% endif %}">Map</a>
   <a href="{% url 'aircraft_list' %}" class="{% if 'aircraft' in n %}active{% endif %}">Aircraft</a>
-  <a href="{% url 'site_list' %}" class="{% if 'site' in n %}active{% endif %}">Sites</a>
-  <a href="{% url 'missions' %}" class="{% if n == 'missions' %}active{% endif %}">Missions</a>
-  <a href="{% url 'flows' %}" class="{% if n == 'flows' %}active{% endif %}">Flows</a>
-  <a href="{% url 'quality' %}" class="{% if n == 'quality' %}active{% endif %}">Data quality</a>
-  <a href="{% url 'ingest_log' %}" class="{% if n == 'ingest_log' %}active{% endif %}">Ingest log</a>
+  <a href="{% url 'site_list' %}" class="{% if n == 'site_list' or n == 'site_detail' %}active{% endif %}">Sites</a>
+  <details class="dropdown"><summary class="{% if n == 'missions' or n == 'flows' or n == 'route_map' %}active{% endif %}">Activity</summary>
+    <div><a href="{% url 'missions' %}">Missions</a><a href="{% url 'flows' %}">Flows</a></div></details>
+  <details class="dropdown"><summary class="{% if n == 'quality' or n == 'unresolved' or n == 'ingest_log' %}active{% endif %}">Data</summary>
+    <div><a href="{% url 'quality' %}">Data quality</a><a href="{% url 'unresolved' %}">Why legs are unresolved</a><a href="{% url 'ingest_log' %}">Ingest log</a></div></details>
   {% if is_admin %}
-  <a href="{% url 'review_queue' %}" class="{% if 'review' in n %}active{% endif %}">Review queue</a>
-  <a href="{% url 'cluster_queue' %}" class="{% if 'cluster' in n %}active{% endif %}">Cluster queue</a>
-  <a href="{% url 'operations' %}" class="{% if n == 'operations' %}active{% endif %}">Operations</a>
-  <a href="{% url 'admin:index' %}">Admin</a>
+  <details class="dropdown"><summary class="{% if 'review' in n or 'cluster' in n or n == 'operations' %}active{% endif %}">Admin</summary>
+    <div><a href="{% url 'review_queue' %}">Review queue</a><a href="{% url 'cluster_queue' %}">Cluster queue</a>
+      <a href="{% url 'operations' %}">Operations</a><a href="{% url 'admin:index' %}">Edit data (Django admin)</a></div></details>
   {% endif %}
+  </nav>
   {% endwith %}
-  <span class="spacer"></span>
-  <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button>Log out {{ user.username }}</button></form>
+  <details class="dropdown user"><summary>{{ user.username }}</summary>
+    <div><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button>Log out</button></form></div></details>
 </header>
-<main>
+<main class="{% block main_class %}{% endblock %}">
   {% if rebuild_banner %}{% if rebuild_banner.0 == "running" %}
   <div class="rebuild-banner running" role="status" data-status-url="{% url 'rebuild_status' %}">
     <span>Rebuild in progress: <strong class="rebuild-step">{{ rebuild_banner.1 }}</strong>. Figures are incomplete until it finishes.</span>
@@ -79,6 +81,15 @@ document.addEventListener('click', function (e) {
   setTimeout(poll, 8000);
 })();
 </script>{% endif %}
+<script>
+// Header menus: one open at a time; a tap elsewhere or Escape closes them.
+(function () {
+  const menus = document.querySelectorAll('header details.dropdown');
+  menus.forEach(d => d.addEventListener('toggle', () => { if (d.open) menus.forEach(o => { if (o !== d) o.open = false; }); }));
+  document.addEventListener('click', e => { menus.forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') menus.forEach(d => { d.open = false; }); });
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
