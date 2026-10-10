@@ -105,6 +105,16 @@ class UnaddedSpotTests(TestCase):
                                                   nearest_site=self.near, nearest_site_distance_m=13900)
         LandingCluster.objects.create(source="adsblol", lat=40.5, lon=-88.5, landing_count=9, distinct_aircraft=1,
                                       first_seen=now, last_seen=now, dismissed=True)
+        # Recent landings: 3 at the spot (shown); at a second spot 2 recent and 5 older ones (not shown).
+        quiet = LandingCluster.objects.create(source="adsblol", lat=40.8, lon=-88.9, landing_count=7,
+                                              distinct_aircraft=1, first_seen=now, last_seen=now)
+        ac = Aircraft.objects.create(tail_number="N1", icao_hex="b00001", status=Aircraft.CONFIRMED)
+        for lat, lon, days in [(40.2, -88.3, 1), (40.2001, -88.3, 5), (40.2, -88.3001, 80),
+                               (40.8, -88.9, 2), (40.8, -88.9, 3)] + [(40.8, -88.9, 120)] * 5:
+            ts = now - timedelta(days=days)
+            Leg.objects.create(hex="b00001", aircraft=ac, source="adsblol", start_ts=ts, end_ts=ts, start_lat=lat,
+                               start_lon=lon, end_lat=lat, end_lon=lon, end_state=Leg.LANDED)
+        self.quiet = quiet
         PlaceSuggestion.objects.create(lat3="40.200", lon3="-88.300", name="Rantoul Helipad", city="Rantoul",
                                        candidates=[{"name": "Rantoul Helipad"}])
         self.admin = User.objects.create_user("boss", password="x", is_staff=True)
@@ -117,9 +127,9 @@ class UnaddedSpotTests(TestCase):
     def test_admin_can_add_from_the_map(self):
         self.client.force_login(self.admin)
         spots, r = self.spots()
-        self.assertEqual(len(spots), 1)  # dismissed spots are left out
+        self.assertEqual(len(spots), 1)  # dismissed spots, and spots with < 3 landings in 90 days, are left out
         s = spots[0]
-        self.assertIn("40 landings by 3 aircraft", s["info"])
+        self.assertIn("3 landings in the last 90 days (40 in all, by 3 aircraft)", s["info"])
         self.assertIn("Nearest site: Carle (13,900 m)", s["info"])
         self.assertIn("Looks like: Rantoul Helipad, Rantoul", s["info"])
         self.assertIn("name=Rantoul+Helipad", s["url"])

@@ -974,13 +974,27 @@ def _spot_markers(request):
     sites = SiteIndex(Site.objects.filter(is_active=True))
     clusters = [c for c in LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site")
                 if not any(d <= s.radius_m for d, s in sites.within(c.lat, c.lon, 2000))]  # added since last refresh
+    # Only spots used at least SPOT_MAP_MIN_LANDINGS times in the last SPOT_MAP_DAYS days: each recent landing
+    # away from sites counts for the nearest spot within the cluster radius (as the clusters were built).
+    recent = Counter()
+    index = SiteIndex(clusters)
+    for lat, lon in Leg.objects.filter(
+            source=SOURCE, end_state=Leg.LANDED, end_site__isnull=True, aircraft__status__in=Aircraft.VISIBLE,
+            end_ts__gte=timezone.now() - timedelta(days=settings.SPOT_MAP_DAYS)).values_list("end_lat", "end_lon"):
+        near = index.within(lat, lon, settings.CLUSTER_RADIUS_M)
+        if near:
+            recent[near[0][1].pk] += 1
+    for c in clusters:
+        c.recent_landings = recent[c.pk]
+    clusters = [c for c in clusters if c.recent_landings >= settings.SPOT_MAP_MIN_LANDINGS]
     admin = is_admin(request.user)
     if admin:
         _add_site_links(clusters, next_url=request.get_full_path())
     out = []
     for c in clusters:
         info = [f"Repeat landing spot, not a site yet",
-                f"{c.landing_count:,} landings by {c.distinct_aircraft} aircraft",
+                f"{c.recent_landings:,} landings in the last {settings.SPOT_MAP_DAYS} days "
+                f"({c.landing_count:,} in all, by {c.distinct_aircraft} aircraft)",
                 f"Last seen {_short_date(local_day(c.last_seen))}"]
         if c.nearest_site:
             info.append(f"Nearest site: {c.nearest_site.name} ({c.nearest_site_distance_m:,.0f} m)")

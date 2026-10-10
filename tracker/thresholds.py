@@ -33,6 +33,10 @@ COVERAGE_CELL_DEG = _env("COVERAGE_CELL_DEG", 0.05)
 COVERAGE_DAYS = _env("COVERAGE_DAYS", 90)
 COVERAGE_GAP_S = _env("COVERAGE_GAP_S", 90)
 
+# Map "Unadded spots": only repeat landing spots used at least this often recently.
+SPOT_MAP_MIN_LANDINGS = _env("SPOT_MAP_MIN_LANDINGS", 3)
+SPOT_MAP_DAYS = _env("SPOT_MAP_DAYS", 90)
+
 # Leg stitching: rejoin one flight that coverage split into two airborne legs. The pieces are
 # joined only when the aircraft was cruising at both ends, the gap is short, and the jump across
 # the gap matches both the heading and the speed it was flying (a slow "implied speed" means it
