@@ -122,6 +122,16 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   containing the cluster) as a Hospital helipad. Suggestions only; an admin creates the site.
 - A leg that ends in `signal_lost` is bridged to the next leg's departure (within 2 h), so a hospital landing
   below coverage still counts if the aircraft is seen lifting off from that pad.
+- Weather hangars: a base can name the site (usually an airport) where its aircraft shelter in bad weather. Aircraft
+  based there treat it as a second home: base ↔ hangar flights are repositions, missions flown from the hangar count
+  normally, and days started in the hangar count toward the base when the base is inferred. The base's page suggests
+  airports where its aircraft often start the day (`HANGAR_SUGGEST_MIN_DAYS`). Changes apply after a rebuild.
+- Hospital bases: when the base is a hospital helipad, landing back there after a scene or after one other hospital is
+  counted as the drop-off (scene → base hospital, or interfacility other hospital → base hospital), at no more than
+  0.6 confidence (`HOSPITAL_BASE_DELIVERY_CONF`), since a flight cancelled en route looks the same. A transfer *out*
+  of the base hospital (base → other hospital → back) looks identical and is counted as inbound.
+- Routes whose start or end is a scene / unknown link to a map of the landings away from known sites on that route
+  (`/routes/map/`); a lost signal is plotted where the aircraft was last seen.
 - Programs are the service name on the aircraft (often hospital-branded), separate from the operator that flies
   it. They are records of their own: add them in the admin or by typing a name in a Review queue card (a new one
   takes that aircraft's operator), link aircraft to them, and open a program's page for its aircraft, missions and

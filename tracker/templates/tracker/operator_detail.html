@@ -31,9 +31,9 @@
 <h2>Busiest routes</h2>
 <div class="scroll"><table class="stack">
 <tr class="head"><th>From</th><th></th><th>To</th><th>Type</th><th class="n">Missions</th></tr>
-{% for flow, n in flows %}
-<tr><td data-label="From">{% if flow.0 %}<a href="{% url 'site_detail' flow.0.pk %}">{{ flow.0.name }}</a>{% else %}<span class="muted">scene / unknown</span>{% endif %}</td><td class="arrow">→</td>
-  <td data-label="To">{% if flow.1 %}<a href="{% url 'site_detail' flow.1.pk %}">{{ flow.1.name }}</a>{% else %}—{% endif %}</td>
+{% for flow, n, map_url in flows %}
+<tr><td data-label="From">{% if flow.0 %}<a href="{% url 'site_detail' flow.0.pk %}">{{ flow.0.name }}</a>{% else %}<a href="{{ map_url }}" class="map-link">scene / unknown <span aria-hidden="true">⌖</span></a>{% endif %}</td><td class="arrow">→</td>
+  <td data-label="To">{% if flow.1 %}<a href="{% url 'site_detail' flow.1.pk %}">{{ flow.1.name }}</a>{% else %}<a href="{{ map_url }}" class="map-link">unknown <span aria-hidden="true">⌖</span></a>{% endif %}</td>
   <td data-label="Type">{{ flow.2 }}</td><td class="n" data-label="Missions">{{ n|intcomma }}</td></tr>
 {% empty %}<tr><td colspan="5" class="muted empty-row">No routes yet.</td></tr>{% endfor %}
 </table></div>

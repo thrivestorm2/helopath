@@ -76,6 +76,11 @@ BASE_POINT_RADIUS_M = _env("BASE_POINT_RADIUS_M", 300.0)  # base that is not (ye
 MISSION_MAX_LEG_GAP_HOURS = _env("MISSION_MAX_LEG_GAP_HOURS", 12.0)
 MISSION_LOST_SIGNAL_BRIDGE_HOURS = _env("MISSION_LOST_SIGNAL_BRIDGE_HOURS", 2.0)
 MISSION_UNKNOWN_CONF = _env("MISSION_UNKNOWN_CONF", 0.3)
+# Base is a hospital and the aircraft lands back there after a scene or another hospital: counted as the drop-off,
+# at no more than this confidence (a flight cancelled en route looks the same).
+HOSPITAL_BASE_DELIVERY_CONF = _env("HOSPITAL_BASE_DELIVERY_CONF", 0.6)
+# Suggested weather hangars: airports where a base's aircraft start the day at least this many times.
+HANGAR_SUGGEST_MIN_DAYS = _env("HANGAR_SUGGEST_MIN_DAYS", 2)
 
 # Data quality: the "local day" used for inferred base and monthly buckets.
 LOCAL_TZ = _env("LOCAL_TZ", "America/Chicago")

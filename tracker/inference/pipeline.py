@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from .. import rawstore
@@ -217,6 +218,12 @@ def infer_bases(source):
             votes[key] += 1
             order.setdefault(key, len(order))
             coords[key].append((leg.start_lat, leg.start_lon))
+        # A day that starts in a base's weather hangar counts for that base (when the base has votes too).
+        voted = [ref for kind, ref in votes if kind == "site"]
+        for hangar_id, base_id in Site.objects.filter(pk__in=voted, weather_hangar_id__in=voted).exclude(
+                weather_hangar_id=F("pk")).values_list("weather_hangar_id", "pk"):
+            if ("site", hangar_id) in votes:
+                votes[("site", base_id)] += votes.pop(("site", hangar_id))
         kind, ref = max(votes, key=lambda k: (votes[k], -order[k]))
         pts = coords[(kind, ref)]
         if kind == "site":
@@ -282,13 +289,17 @@ def build_clusters(source):
 
 
 # --- missions -------------------------------------------------------------------------------
-BASE, UNMATCHED, UNKNOWN = "BASE", "UNMATCHED", "UNKNOWN"
+BASE, HANGAR, UNMATCHED, UNKNOWN = "BASE", "HANGAR", "UNMATCHED", "UNKNOWN"
+HOME = (BASE, HANGAR)  # either one starts and ends a mission
 
 
 class _Base:
+    """The aircraft's base, plus the base's weather hangar (a second home) when one is set."""
+
     def __init__(self, aircraft):
         site = aircraft.base or aircraft.inferred_base
         self.site = site
+        self.hangar = site.weather_hangar if site and site.weather_hangar_id != site.pk else None
         if site:
             self.lat, self.lon, self.radius = site.lat, site.lon, site.radius_m
         elif aircraft.inferred_base_lat is not None:
@@ -297,26 +308,39 @@ class _Base:
         else:
             self.lat = None
 
-    def contains(self, lat, lon, site_id=None):
+    def home(self, lat, lon, site_id=None):
+        """BASE or HANGAR if the position is at one of them, else None."""
         if self.lat is None:
-            return False
-        if self.site and site_id == self.site.pk:
-            return True
-        return haversine_m(lat, lon, self.lat, self.lon) <= self.radius
+            return None
+        if (self.site and site_id == self.site.pk) or haversine_m(lat, lon, self.lat, self.lon) <= self.radius:
+            return BASE
+        h = self.hangar
+        if h and (site_id == h.pk or haversine_m(lat, lon, h.lat, h.lon) <= h.radius_m):
+            return HANGAR
+        return None
+
+    def home_site(self, which):
+        return self.site if which == BASE else self.hangar
+
+    @property
+    def is_hospital(self):
+        return bool(self.site and self.site.site_type == Site.HOSPITAL)
 
 
 def _arrival(legs, i, base):
     leg = legs[i]
     nxt = legs[i + 1] if i + 1 < len(legs) else None
     if leg.end_state != Leg.LOST:
-        if base.contains(leg.end_lat, leg.end_lon, leg.end_site_id):
-            return BASE
+        home = base.home(leg.end_lat, leg.end_lon, leg.end_site_id)
+        if home:
+            return home
         return leg.end_site if leg.end_site_id else UNMATCHED
     # Signal lost: bridge to the next leg's departure if it follows soon enough.
     bridge = timedelta(hours=settings.MISSION_LOST_SIGNAL_BRIDGE_HOURS)
     if nxt and nxt.start_ts - leg.end_ts <= bridge:
-        if base.contains(nxt.start_lat, nxt.start_lon, nxt.start_site_id):
-            return BASE
+        home = base.home(nxt.start_lat, nxt.start_lon, nxt.start_site_id)
+        if home:
+            return home
         if nxt.start_site_id:
             return nxt.start_site
         if nxt.start_on_ground:
@@ -324,16 +348,20 @@ def _arrival(legs, i, base):
     return UNKNOWN
 
 
+def _is_hospital(stop):
+    return isinstance(stop, Site) and stop.site_type == Site.HOSPITAL
+
+
 def _symbol(stop):
-    if stop in (UNMATCHED, UNKNOWN, BASE):
-        return {UNMATCHED: "U", UNKNOWN: "?", BASE: "B"}[stop]
+    if stop in (UNMATCHED, UNKNOWN, BASE, HANGAR):
+        return {UNMATCHED: "U", UNKNOWN: "?", BASE: "B", HANGAR: "W"}[stop]
     return {Site.HOSPITAL: "H", Site.AIRPORT: "A", Site.BASE: "A"}.get(stop.site_type, "O")
 
 
-def classify_mission(stops, stop_confs):
-    """Return (label, origin, destination, confidence, rule)."""
+def classify_mission(stops, stop_confs, left="base", back="base"):
+    """Return (label, origin, destination, confidence, rule). left/back name the home it left from and came back to."""
     syms = [_symbol(s) for s in stops]
-    rule = "base>" + "".join(f"{s}>" for s in syms) + "base"
+    rule = f"{left}>" + "".join(f"{s}>" for s in syms) + back
     unknown_conf = settings.MISSION_UNKNOWN_CONF
     if syms == ["H", "H"] and stops[0].pk != stops[1].pk:
         return "interfacility", stops[0], stops[1], min(stop_confs), rule
@@ -350,7 +378,8 @@ def build_missions(source):
     Mission.objects.filter(source=source).delete()
     max_gap = timedelta(hours=settings.MISSION_MAX_LEG_GAP_HOURS)
     created = 0
-    for aircraft in Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related("base", "inferred_base"):
+    for aircraft in Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related(
+            "base__weather_hangar", "inferred_base__weather_hangar"):
         base = _Base(aircraft)
         if base.lat is None:
             continue
@@ -360,17 +389,17 @@ def build_missions(source):
         cur = None
         prev_arr = None
         for i, leg in enumerate(legs):
-            departs_base = base.contains(leg.start_lat, leg.start_lon, leg.start_site_id)
-            if cur is not None and (departs_base or leg.start_ts - legs[i - 1].end_ts > max_gap):
-                groups.append((cur, False))  # returned to base unseen, or lost the thread
+            departs_home = base.home(leg.start_lat, leg.start_lon, leg.start_site_id) is not None
+            if cur is not None and (departs_home or leg.start_ts - legs[i - 1].end_ts > max_gap):
+                groups.append((cur, False))  # returned home unseen, or lost the thread
                 cur = None
             if cur is None:
-                if not (departs_base or prev_arr == BASE):
+                if not (departs_home or prev_arr in HOME):
                     prev_arr = arrivals[i]
                     continue
                 cur = []
             cur.append(i)
-            if arrivals[i] == BASE:
+            if arrivals[i] in HOME:
                 groups.append((cur, True))
                 cur = None
             prev_arr = arrivals[i]
@@ -379,11 +408,23 @@ def build_missions(source):
             stops = [arrivals[i] for i in idxs[:-1]] if complete else [arrivals[i] for i in idxs]
             confs = [legs[i].confidence if legs[i].end_state != Leg.LOST else settings.MISSION_UNKNOWN_CONF
                      for i in (idxs[:-1] if complete else idxs)]
+            first = legs[idxs[0]]
+            left = base.home(first.start_lat, first.start_lon, first.start_site_id) or BASE
             if complete:
-                label, origin, dest, conf, rule = classify_mission(stops, confs)
+                back = arrivals[idxs[-1]]
+                if not stops and left != back:  # base <-> weather hangar
+                    label, origin, dest = "reposition", base.home_site(left), base.home_site(back)
+                    conf, rule = legs[idxs[-1]].confidence, f"{left.lower()}>{back.lower()}"
+                else:
+                    if back == BASE and base.is_hospital and len(stops) == 1 and (
+                            stops[0] == UNMATCHED or (_is_hospital(stops[0]) and stops[0].pk != base.site.pk)):
+                        # Hospital base: landing back there after a scene or another hospital is the drop-off.
+                        stops = stops + [base.site]
+                        confs = confs + [min(legs[idxs[-1]].confidence, settings.HOSPITAL_BASE_DELIVERY_CONF)]
+                    label, origin, dest, conf, rule = classify_mission(stops, confs, left.lower(), back.lower())
             else:
                 label, origin, dest, conf = "unknown", None, None, settings.MISSION_UNKNOWN_CONF
-                rule = "incomplete: base>" + "".join(f"{_symbol(s)}>" for s in stops) + "…"
+                rule = f"incomplete: {left.lower()}>" + "".join(f"{_symbol(s)}>" for s in stops) + "…"
             built.append((Mission(
                 aircraft=aircraft,
                 source=source,
