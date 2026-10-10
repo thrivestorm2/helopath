@@ -1,5 +1,6 @@
 import csv
 import re
+from urllib.parse import urlencode
 from collections import Counter, defaultdict
 from datetime import timedelta
 
@@ -9,12 +10,15 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .inference.pipeline import local_day
+from . import places
 from .models import (
     AutoConfirmRule,
+    PlaceSuggestion,
     Aircraft,
     DismissedClusterMemory,
     IngestRun,
@@ -402,8 +406,21 @@ def review_rules(request):
 
 @admin_required
 def cluster_queue(request):
-    clusters = LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site")
-    return render(request, "tracker/cluster_queue.html", {"clusters": clusters})
+    from django.conf import settings as dj_settings
+
+    clusters = list(LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site"))
+    known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
+    busy = dj_settings.PLACE_LOOKUP_MIN_LANDINGS
+    for c in clusters:
+        c.lookup_wanted = c.landing_count > busy
+        c.suggestion = known.get(places.location_key(c.lat, c.lon)) if c.lookup_wanted else None
+        named = c.suggestion is not None and bool(c.suggestion.name)
+        c.create_url = reverse("admin:tracker_site_add") + "?" + urlencode({
+            "lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
+            "site_type": Site.HOSPITAL if named and places.looks_like_hospital(c.suggestion) else Site.BASE,
+            "name": c.suggestion.name if named else f"Cluster {c.lat:.4f},{c.lon:.4f}",
+        })
+    return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy})
 
 
 @require_POST

@@ -87,3 +87,8 @@ PRIMARY_SOURCE = "adsblol"
 # Background worker: when the daily ingest runs (UTC). adsb.lol publishes a day during the following day.
 NIGHTLY_UTC_HOUR = _env("NIGHTLY_UTC_HOUR", 18)
 NIGHTLY_UTC_MINUTE = _env("NIGHTLY_UTC_MINUTE", 30)
+
+# Landing-cluster name suggestions from OpenStreetMap (tracker/places.py).
+PLACE_LOOKUP_MIN_LANDINGS = _env("PLACE_LOOKUP_MIN_LANDINGS", 20)   # clusters with MORE landings than this
+PLACE_LOOKUP_RADIUS_M = _env("PLACE_LOOKUP_RADIUS_M", 500)
+PLACE_LOOKUPS_PER_TICK = _env("PLACE_LOOKUPS_PER_TICK", 5)          # per worker tick (~30 s): polite to Overpass

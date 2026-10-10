@@ -352,3 +352,24 @@ class AutoConfirmRule(models.Model):
 
     def __str__(self):
         return f"Registrant contains “{self.registrant_contains}”"
+
+
+class PlaceSuggestion(models.Model):
+    """Cached OpenStreetMap lookup of named hospitals/helipads near a landing-cluster location.
+
+    Keyed by coordinates rounded to 3 decimals (~100 m) so rebuilding clusters reuses earlier
+    answers instead of querying again. Names are suggestions only; an admin creates the Site.
+    """
+
+    lat3 = models.DecimalField(max_digits=7, decimal_places=3)
+    lon3 = models.DecimalField(max_digits=8, decimal_places=3)
+    name = models.CharField(max_length=200, blank=True)  # best match; blank = nothing named nearby
+    kind = models.CharField(max_length=20, blank=True)   # "hospital" or "helipad"
+    distance_m = models.PositiveIntegerField(null=True, blank=True)
+    osm_url = models.URLField(blank=True)
+    candidates = models.JSONField(default=list)          # up to 5: [{name, kind, distance_m, osm_url}]
+    error = models.CharField(max_length=200, blank=True)  # set when the lookup failed (retried later)
+    looked_up_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("lat3", "lon3")]
