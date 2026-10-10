@@ -56,11 +56,11 @@ def _sorted(qs, request, allowed, default):
     return qs.order_by(sort if sort.lstrip("-") in allowed else default), sort
 
 
-def _filter_qs(request):
-    """Current query string without sort/page, for building sort links."""
+def _filter_qs(request, drop=None):
+    """Current query string without sort/page (and `drop`), for building sort links."""
     q = request.GET.copy()
-    q.pop("sort", None)
-    q.pop("page", None)
+    for key in ("sort", "page", drop):
+        q.pop(key, None)
     return q.urlencode()
 
 
@@ -122,12 +122,17 @@ def aircraft_list(request):
         qs = qs.filter(operator_id=request.GET["operator"])
     if request.GET.get("base"):
         qs = qs.filter(Q(base_id=request.GET["base"]) | Q(base__isnull=True, inferred_base_id=request.GET["base"]))
+    landed_at = None
+    if request.GET.get("site", "").isdigit():  # aircraft with a resolved arrival there, as counted on the site page
+        landed_at = get_object_or_404(Site, pk=request.GET["site"])
+        qs = qs.filter(pk__in=Leg.objects.filter(source=SOURCE, end_site=landed_at).values("aircraft_id"))
     qs, sort = _sorted(qs, request, {"tail_number", "icao_hex", "make_model", "status", "qualifying_visits",
                                      "first_seen", "last_seen", "operator__name"}, "tail_number")
     bases = Site.objects.filter(Q(based_aircraft__isnull=False) | Q(inferred_based_aircraft__isnull=False)).distinct()
     return render(request, "tracker/aircraft_list.html", {
         "page": _page(request, qs), "sort": sort, "filter_qs": _filter_qs(request), "operators": Operator.objects.all(), "bases": bases,
         "statuses": [s for s in Aircraft.STATUS_CHOICES if s[0] in Aircraft.VISIBLE],
+        "landed_at": landed_at, "clear_site_qs": _filter_qs(request, drop="site"),
     })
 
 
@@ -162,11 +167,13 @@ def site_list(request):
     })
 
 
-def operator_link(request, operator_id):
-    """Operator page, or for unassigned aircraft the aircraft list filtered to them; keeps the confirmed-only view."""
+def operator_link(request, operator_id, site=None):
+    """Operator page, or for unassigned aircraft the aircraft list filtered to them (and to those that landed at
+    `site`, when given); keeps the confirmed-only view."""
     if operator_id:
         return reverse("operator_detail", args=[operator_id]) + ("?confirmed=1" if _confirmed_only(request) else "")
-    return reverse("aircraft_list") + "?operator=none" + ("&status=confirmed" if _confirmed_only(request) else "")
+    return (reverse("aircraft_list") + "?operator=none" + (f"&site={site.pk}" if site else "")
+            + ("&status=confirmed" if _confirmed_only(request) else ""))
 
 
 def site_detail(request, pk):
@@ -178,7 +185,7 @@ def site_detail(request, pk):
     months = sorted({m for c in table.values() for m in c})
     rows = []
     for (op_id, name), c in sorted(table.items(), key=lambda kv: (kv[0][0] is None, kv[0][1])):
-        rows.append((op_id, name, operator_link(request, op_id), [c[m] for m in months], sum(c.values())))
+        rows.append((op_id, name, operator_link(request, op_id, site), [c[m] for m in months], sum(c.values())))
     return render(request, "tracker/site_detail.html", {
         "site": site, "months": months, "rows": rows,
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),

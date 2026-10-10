@@ -8,7 +8,9 @@
   <select name="operator"><option value="">Any operator</option><option value="none" {% if request.GET.operator == "none" %}selected{% endif %}>Unassigned</option>{% for o in operators %}<option value="{{ o.pk }}" {% if request.GET.operator == o.pk|stringformat:"s" %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
   <select name="base"><option value="">Any base</option>{% for b in bases %}<option value="{{ b.pk }}" {% if request.GET.base == b.pk|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
   <input type="hidden" name="sort" value="{{ sort }}">
+  {% if landed_at %}<input type="hidden" name="site" value="{{ landed_at.pk }}">{% endif %}
 </form>
+{% if landed_at %}<p class="muted">Showing aircraft that landed at <a href="{% url 'site_detail' landed_at.pk %}">{{ landed_at.name }}</a> · <a href="?{{ clear_site_qs }}">Show all sites</a></p>{% endif %}
 <div id="results">
 <div class="scroll"><table class="stack">
 <tr class="head">

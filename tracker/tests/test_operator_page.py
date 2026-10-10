@@ -73,12 +73,24 @@ class OperatorPageTests(TestCase):
                                end_state="landed_observed")
         r = self.client.get(reverse("site_detail", args=[self.hosp_a.pk]))
         op_url = reverse("operator_detail", args=[self.op.pk])
-        none_url = reverse("aircraft_list") + "?operator=none"
+        none_url = reverse("aircraft_list") + f"?operator=none&amp;site={self.hosp_a.pk}"
         self.assertContains(r, f'<tr data-href="{op_url}"><td><a href="{op_url}">Air Evac Lifeteam</a>')
         self.assertContains(r, f'<tr data-href="{none_url}"><td><a href="{none_url}">(unassigned)</a>')
         body = r.content.decode()
         self.assertLess(body.index("Air Evac Lifeteam"), body.index("(unassigned)"))  # unassigned last
         self.assertContains(r, "map.fitBounds(ring.getBounds()")  # whole radius in view
+        # The unassigned link lists only unassigned aircraft that landed here.
+        Aircraft.objects.create(tail_number="N66EL", icao_hex="a00066", status=Aircraft.DISCOVERED)  # landed elsewhere
+        r = self.client.get(reverse("aircraft_list") + f"?operator=none&site={self.hosp_a.pk}")
+        self.assertContains(r, "N55UA")
+        self.assertNotContains(r, "N66EL")
+        self.assertNotContains(r, "N412AE")
+        self.assertContains(r, "Showing aircraft that landed at")
+        self.assertContains(r, 'href="?operator=none">Show all sites</a>')
+        r = self.client.get(reverse("aircraft_list") + f"?site={self.hosp_a.pk}")
+        self.assertContains(r, "N55UA")
+        self.assertContains(r, "N412AE")
+        self.assertEqual(self.client.get(reverse("aircraft_list") + "?site=999").status_code, 404)
 
     def test_unassigned_aircraft_filter(self):
         Aircraft.objects.create(tail_number="N55UA", icao_hex="a00055", status=Aircraft.DISCOVERED)
