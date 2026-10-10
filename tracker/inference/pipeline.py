@@ -25,6 +25,7 @@ from ..models import (
     RegistryAircraft,
     Site,
 )
+from ..rules import apply_auto_confirm_rules
 from ..sources import get_adapter
 from .legs import infer_legs, is_qualifying_visit
 
@@ -191,6 +192,7 @@ def run_discovery(source):
 
     for a in Aircraft.objects.all():
         Leg.objects.filter(source=source, hex=a.icao_hex).exclude(aircraft=a).update(aircraft=a)
+    apply_auto_confirm_rules()  # admin-defined rules confirm matching newly discovered aircraft
     infer_bases(source)
     return len(qualified)
 
