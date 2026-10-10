@@ -6,6 +6,29 @@
   {% if site.reviewed %}reviewed{% else %}not yet reviewed{% endif %}{% if not site.is_active %} · <strong>inactive</strong>{% endif %}
   {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+{% if site.site_type == "hospital_helipad" or flows.received or flows.sent %}
+<div class="card" id="patients">
+  <h2 style="margin-top:0">Patients received and sent <span class="muted" style="font-size:14px">(inferred)</span></h2>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+  <div>
+    <p><strong style="font-size:22px">{{ flows.received }}</strong> received
+      <span class="muted">· {% if flows.from_scenes %}<a href="{{ flows.scene_map }}" class="map-link">{{ flows.from_scenes }} from scenes <span aria-hidden="true">⌖</span></a>{% else %}0 from scenes{% endif %} · {{ flows.from_hospitals }} from other hospitals</span></p>
+    <table><tr><th>Sending hospital</th><th class="n">Patients</th></tr>
+    {% for r in flows.senders %}<tr data-href="{% url 'site_detail' r.origin_site %}"><td><a href="{% url 'site_detail' r.origin_site %}">{{ r.origin_site__name }}</a></td><td class="n">{{ r.n }}</td></tr>
+    {% empty %}<tr><td colspan="2" class="muted">No transfers in yet.</td></tr>{% endfor %}</table>
+  </div>
+  <div>
+    <p><strong style="font-size:22px">{{ flows.sent }}</strong> sent <span class="muted">· transfers out to other hospitals</span></p>
+    <table><tr><th>Receiving hospital</th><th class="n">Patients</th></tr>
+    {% for r in flows.receivers %}<tr data-href="{% url 'site_detail' r.destination_site %}"><td><a href="{% url 'site_detail' r.destination_site %}">{{ r.destination_site__name }}</a></td><td class="n">{{ r.n }}</td></tr>
+    {% empty %}<tr><td colspan="2" class="muted">No transfers out yet.</td></tr>{% endfor %}</table>
+  </div>
+  </div>
+  <p class="muted">Counted from inferred missions: a scene or another hospital followed by a landing here is a patient
+    received; a landing here followed by another hospital is a patient sent.{% if flows.unresolved %}
+    {{ flows.unresolved }} visit{{ flows.unresolved|pluralize }} where the direction is unknown {{ flows.unresolved|pluralize:"is,are" }} not counted.{% endif %}</p>
+</div>
+{% endif %}
 {% if n_based or site.weather_hangar %}
 <div class="card" id="hangar">
   <h2 style="margin-top:0">Bad-weather hangar</h2>

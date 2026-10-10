@@ -7,7 +7,8 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -190,8 +191,48 @@ def aircraft_apply(request, pk):
     return redirect(reverse("aircraft_detail", args=[aircraft.pk]) + "#lookup")
 
 
+PATIENT_IN = ("interfacility", "scene")  # labels that bring a patient to their destination hospital
+
+
+def _patient_aggs(request):
+    return MonthlyAggregate.objects.filter(source=SOURCE, includes_unreviewed=not _confirmed_only(request))
+
+
+def _with_patient_counts(request, qs):
+    """Annotate sites with inferred patients received (scene or interfacility in) and sent (interfacility out)."""
+    aggs = _patient_aggs(request)
+
+    def total(site_field, **kw):
+        sub = (aggs.filter(**{site_field: OuterRef("pk")}, **kw).order_by().values(site_field)
+               .annotate(s=Sum("count")).values("s"))
+        return Coalesce(Subquery(sub, output_field=IntegerField()), 0)
+
+    return qs.annotate(received=total("destination_site", label__in=PATIENT_IN),
+                       sent=total("origin_site", label="interfacility"))
+
+
+def patient_flows(request, site, limit=10):
+    """Inferred patients received at and sent from a site, with the hospitals on the other end."""
+    aggs = _patient_aggs(request)
+    inbound = aggs.filter(destination_site=site, label__in=PATIENT_IN)
+    by_label = dict(inbound.values_list("label").annotate(n=Sum("count")))
+    senders = (inbound.filter(label="interfacility").values("origin_site", "origin_site__name")
+               .annotate(n=Sum("count")).order_by("-n", "origin_site__name")[:limit])
+    outbound = aggs.filter(origin_site=site, label="interfacility")
+    receivers = (outbound.values("destination_site", "destination_site__name")
+                 .annotate(n=Sum("count")).order_by("-n", "destination_site__name")[:limit])
+    unresolved = aggs.filter(destination_site=site, label="single_hospital_unresolved").aggregate(n=Sum("count"))["n"]
+    return {
+        "received": sum(by_label.values()), "from_scenes": by_label.get("scene", 0),
+        "from_hospitals": by_label.get("interfacility", 0), "senders": list(senders),
+        "sent": outbound.aggregate(n=Sum("count"))["n"] or 0, "receivers": list(receivers),
+        "unresolved": unresolved or 0,
+        "scene_map": route_map_url(request, None, site, "scene"),
+    }
+
+
 def site_list(request):
-    qs = Site.objects.filter(is_active=True)
+    qs = _with_patient_counts(request, Site.objects.filter(is_active=True))
     q = request.GET.get("q", "").strip()
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(faa_id__icontains=q) | Q(city__icontains=q))
@@ -199,7 +240,8 @@ def site_list(request):
         qs = qs.filter(site_type=request.GET["type"])
     if request.GET.get("state"):
         qs = qs.filter(state=request.GET["state"])
-    qs, sort = _sorted(qs, request, {"name", "site_type", "city", "state", "faa_id", "radius_m", "reviewed"}, "name")
+    qs, sort = _sorted(qs, request, {"name", "site_type", "city", "state", "faa_id", "radius_m", "reviewed",
+                                     "received", "sent"}, "name")
     view = request.GET.get("view", "table")
     return render(request, "tracker/site_list.html", {
         "page": _page(request, qs, 100) if view == "table" else None,
@@ -207,6 +249,7 @@ def site_list(request):
                       for s in qs] if view == "map" else [],
         "view": view, "sort": sort, "filter_qs": _filter_qs(request), "types": Site.TYPE_CHOICES,
         "states": Site.objects.exclude(state="").values_list("state", flat=True).distinct().order_by("state"),
+        "confirmed_only": _confirmed_only(request),
     })
 
 
@@ -231,7 +274,7 @@ def site_detail(request, pk):
         rows.append((op_id, name, operator_link(request, op_id, site), [c[m] for m in months], sum(c.values())))
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
-        "site": site, "months": months, "rows": rows, "n_based": n_based,
+        "flows": patient_flows(request, site), "site": site, "months": months, "rows": rows, "n_based": n_based,
         # Once a hangar is set the card just names it; changing it is done on the admin Edit page.
         "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based and not site.weather_hangar_id else [],
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
