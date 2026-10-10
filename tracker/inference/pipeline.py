@@ -374,10 +374,33 @@ def classify_mission(stops, stop_confs, left="base", back="base"):
     return "unknown", None, None, unknown_conf, rule
 
 
+class HospitalVolumes:
+    """Landings at each hospital by medical aircraft, by the base of the aircraft that landed.
+
+    Used to tell which way the patient went on a there-and-back flight from a hospital base (base > B > base):
+    the patient is assumed to go to the busier hospital. Aircraft based at either hospital are left out of both
+    counts, so the base aircraft's own trips (and its many landings at home) do not tip the comparison."""
+
+    def __init__(self, source):
+        self.total, self.by_base = Counter(), Counter()
+        for site_id, base_id, inferred_id in (
+                Leg.objects.filter(source=source, end_site__site_type=Site.HOSPITAL,
+                                   aircraft__status__in=Aircraft.VISIBLE)
+                .values_list("end_site_id", "aircraft__base_id", "aircraft__inferred_base_id")):
+            self.total[site_id] += 1
+            self.by_base[(site_id, base_id or inferred_id)] += 1
+
+    def busier(self, a, b):
+        """True if hospital b is busier than hospital a (ids), not counting aircraft based at either."""
+        vol = lambda s: self.total[s] - self.by_base[(s, a)] - self.by_base[(s, b)]
+        return vol(b) > vol(a)
+
+
 def build_missions(source):
     Mission.objects.filter(source=source).delete()
     max_gap = timedelta(hours=settings.MISSION_MAX_LEG_GAP_HOURS)
     created = 0
+    volumes = HospitalVolumes(source)
     for aircraft in Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related(
             "base__weather_hangar", "inferred_base__weather_hangar"):
         base = _Base(aircraft)
@@ -419,9 +442,17 @@ def build_missions(source):
                     if back == BASE and base.is_hospital and len(stops) == 1 and (
                             stops[0] == UNMATCHED or (_is_hospital(stops[0]) and stops[0].pk != base.site.pk)):
                         # Hospital base: landing back there after a scene or another hospital is the drop-off.
-                        stops = stops + [base.site]
-                        confs = confs + [min(legs[idxs[-1]].confidence, settings.HOSPITAL_BASE_DELIVERY_CONF)]
+                        # A there-and-back to another hospital (base > B > base) looks the same either way, so the
+                        # patient is assumed to go to the busier of the two: B if it is busier (base > B carried
+                        # the patient), else the base (B > base did).
+                        cap = settings.HOSPITAL_BASE_DELIVERY_CONF
+                        if stops[0] != UNMATCHED and volumes.busier(base.site.pk, stops[0].pk):
+                            stops, confs = [base.site] + stops, [min(legs[idxs[0]].confidence, cap)] + confs
+                        else:
+                            stops, confs = stops + [base.site], confs + [min(legs[idxs[-1]].confidence, cap)]
                     label, origin, dest, conf, rule = classify_mission(stops, confs, left.lower(), back.lower())
+                    if origin is not None and base.site is not None and origin == base.site:
+                        rule += " (to the busier hospital)"
             else:
                 label, origin, dest, conf = "unknown", None, None, settings.MISSION_UNKNOWN_CONF
                 rule = f"incomplete: {left.lower()}>" + "".join(f"{_symbol(s)}>" for s in stops) + "…"

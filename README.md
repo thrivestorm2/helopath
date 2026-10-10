@@ -128,8 +128,10 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   airports where its aircraft often start the day (`HANGAR_SUGGEST_MIN_DAYS`). Changes apply after a rebuild.
 - Hospital bases: when the base is a hospital helipad, landing back there after a scene or after one other hospital is
   counted as the drop-off (scene → base hospital, or interfacility other hospital → base hospital), at no more than
-  0.6 confidence (`HOSPITAL_BASE_DELIVERY_CONF`), since a flight cancelled en route looks the same. A transfer *out*
-  of the base hospital (base → other hospital → back) looks identical and is counted as inbound.
+  0.6 confidence (`HOSPITAL_BASE_DELIVERY_CONF`), since a flight cancelled en route looks the same. A
+  there-and-back to another hospital (base → B → base) looks the same whichever way the patient went, so the patient
+  is assumed to go to the busier hospital: landings by medical aircraft based at neither hospital decide it. If B is
+  busier it counts as base → B (rule ends "(to the busier hospital)"); otherwise, and on a tie, as B → base.
 - Routes whose start or end is a scene / unknown link to a map of the landings away from known sites on that route
   (`/routes/map/`); a lost signal is plotted where the aircraft was last seen.
 - Programs are the service name on the aircraft (often hospital-branded), separate from the operator that flies
