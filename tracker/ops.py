@@ -12,6 +12,7 @@ from .ingest import run_backfill, utc_today
 from .models import OpsTask, WorkerState
 from .nasr import download_apt_base, extract_apt_base
 from .registry import download_registry, load_registry
+from .rules import apply_auto_confirm_rules
 from .seed import seed_sites
 
 
@@ -47,6 +48,7 @@ def run_task(task: OpsTask):
             log(str(pipeline.rebuild(settings.PRIMARY_SOURCE)))
         elif task.kind == OpsTask.REFRESH:
             src = settings.PRIMARY_SOURCE
+            log(f"auto-confirmed {apply_auto_confirm_rules()} aircraft by rule")
             log(f"clusters {pipeline.build_clusters(src)}, missions {pipeline.build_missions(src)}, "
                 f"aggregates {pipeline.build_aggregates(src)}")
         task.status = OpsTask.OK

@@ -118,6 +118,10 @@ class Aircraft(models.Model):
         return self.tail_number
 
     @property
+    def top_hospitals_list(self):
+        return [h for h in self.top_hospitals_hint.split("; ") if h]
+
+    @property
     def effective_base(self):
         return self.base or self.inferred_base
 
@@ -323,3 +327,26 @@ class WorkerState(models.Model):
     @classmethod
     def get(cls):
         return cls.objects.get_or_create(pk=1)[0]
+
+
+class AutoConfirmRule(models.Model):
+    """Admin-defined rule: discovered aircraft whose FAA registrant matches are confirmed automatically.
+
+    A rule is an admin decision, so applying it is not "automation overwriting a human": it only
+    ever moves aircraft out of `discovered`, never touches confirmed or rejected ones, and records
+    each confirmation in the admin log.
+    """
+
+    registrant_contains = models.CharField(
+        max_length=200, help_text="Case-insensitive text to look for in the FAA registrant name.")
+    operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL,
+                                 help_text="Optional: also set this operator when it is not set yet.")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["registrant_contains"]
+
+    def __str__(self):
+        return f"Registrant contains “{self.registrant_contains}”"
