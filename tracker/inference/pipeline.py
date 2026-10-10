@@ -30,6 +30,10 @@ from ..rules import apply_auto_confirm_rules
 from ..sources import get_adapter
 from .legs import infer_legs, is_qualifying_visit
 
+# Bump when a change to the counting rules (legs, discovery, missions, aggregates) needs existing data rebuilt:
+# admins then see a "rebuild needed" banner after the deploy (tracker.rebuild_flag).
+PIPELINE_VERSION = 1
+
 log = logging.getLogger("tracker.inference")
 
 

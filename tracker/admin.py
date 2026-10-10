@@ -4,7 +4,6 @@ from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
 from django.db.models import Count
 from django.http import HttpResponseRedirect
-from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import format_html, format_html_join
 from import_export import fields, resources
@@ -12,6 +11,7 @@ from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 
 from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
+from .rebuild_flag import flag_rebuild
 
 admin.site.site_header = "Air Medical Tracker admin"
 admin.site.site_title = "Air Medical Tracker"
@@ -69,6 +69,8 @@ def deactivate(modeladmin, request, queryset):
     n = queryset.update(is_active=False)
     for obj in queryset:
         modeladmin.log_change(request, obj, "Deactivated")
+    if n:
+        flag_rebuild(f"{n} site{'s' if n != 1 else ''} deactivated")
     modeladmin.message_user(request, f"Deactivated {n} site(s). Takes effect after the next rebuild.")
 
 
@@ -100,11 +102,8 @@ class SiteAdmin(ReturnToPageMixin, ImportExportModelAdmin):
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
-        messages.warning(
-            request,
-            format_html('Site changes take effect after the next rebuild. <a class="button" href="{}">Queue rebuild</a>',
-                        reverse("queue_rebuild")),
-        )
+        flag_rebuild(f"site {obj.name} {'edited' if change else 'added'}")
+        messages.warning(request, "Site changes take effect after the next rebuild (see the banner at the top).")
 
 
 @admin.register(Operator)
