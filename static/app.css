@@ -66,3 +66,6 @@ tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
 /* On phones a card's lead line carries values that have their own column on wider screens. */
 .mobile-only { display: none; }
 @media (max-width: 640px) { .mobile-only { display: inline; } table.stack td.desktop-only { display: none; } }
+
+.suggestion details { margin-top: 2px; }
+@media (max-width: 640px) { table.stack td .suggestion { text-align: right; max-width: 70%; } }
