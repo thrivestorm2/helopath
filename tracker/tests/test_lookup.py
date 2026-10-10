@@ -63,8 +63,38 @@ class LookupTests(TestCase):
         self.a.refresh_from_db()
         self.assertEqual(self.a.call_sign, "LIFE3")
         self.assertContains(r, "Call sign set to LIFE3.")
-        self.assertContains(r, '<span class="badge confirmed">Current</span>')
-        self.client.post(self.apply, {"field": "program", "value": self.lf.pk})
+        self.assertNotContains(r, "Suggested call sign")  # set: no more suggestions
+        self.assertContains(r, "Suggested program")
+        r = self.client.post(self.apply, {"field": "program", "value": self.lf.pk}, follow=True)
         self.a.refresh_from_db()
         self.assertEqual(self.a.program, self.lf)
+        self.assertNotContains(r, "Suggested program")
         self.assertEqual(self.client.post(self.apply, {"field": "program", "value": 999}).status_code, 404)
+
+    def test_dismiss_stops_suggestions(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(self.apply, {"field": "call_sign", "action": "dismiss"}, follow=True)
+        self.a.refresh_from_db()
+        self.assertTrue(self.a.call_sign_reviewed)
+        self.assertEqual(self.a.call_sign, "")  # nothing set, just reviewed
+        self.assertContains(r, "No more call sign suggestions")
+        self.assertNotContains(r, "Suggested call sign")
+        self.assertContains(r, "Suggested program")
+        r = self.client.post(self.apply, {"field": "program", "action": "dismiss"}, follow=True)
+        self.a.refresh_from_db()
+        self.assertTrue(self.a.program_reviewed)
+        self.assertNotContains(r, "Suggested program")
+        self.assertContains(r, "Look it up")  # search links stay
+        self.assertEqual(self.client.post(self.apply, {"field": "notes", "action": "dismiss"}).status_code, 302)
+        # The admin edit page can turn suggestions back on.
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        page = self.client.get(reverse("admin:tracker_aircraft_change", args=[self.a.pk]))
+        self.assertContains(page, 'name="call_sign_reviewed"')
+        self.assertContains(page, 'name="program_reviewed"')
+
+    def test_viewer_cannot_dismiss(self):
+        self.client.force_login(self.viewer)
+        r = self.client.post(self.apply, {"field": "call_sign", "action": "dismiss"})
+        self.assertEqual(r.status_code, 403)
+        self.a.refresh_from_db()
+        self.assertFalse(self.a.call_sign_reviewed)
