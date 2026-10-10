@@ -364,6 +364,10 @@ class WorkerState(models.Model):
     heartbeat = models.DateTimeField(null=True, blank=True)
     last_nightly = models.DateField(null=True, blank=True)
     current = models.CharField(max_length=200, blank=True)
+    # "Rebuild needed" banner (tracker.rebuild_flag): edits waiting for a rebuild, and the counting-rules version
+    # the last queued rebuild applied.
+    rebuild_reason = models.CharField(max_length=300, blank=True)
+    rules_version = models.PositiveIntegerField(default=0)
 
     @classmethod
     def get(cls):

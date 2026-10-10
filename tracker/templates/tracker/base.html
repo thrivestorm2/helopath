@@ -31,6 +31,10 @@
   <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button>Log out {{ user.username }}</button></form>
 </header>
 <main>
+  {% if rebuild_banner %}<div class="rebuild-banner" role="status">
+    <span>Rebuild needed to apply recent changes: {{ rebuild_banner }}.</span>
+    <form method="post" action="{% url 'queue_rebuild' %}">{% csrf_token %}<input type="hidden" name="source" value="adsblol"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="primary">Queue rebuild</button></form>
+  </div>{% endif %}
   {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
   {% block content %}{% endblock %}
 </main>
