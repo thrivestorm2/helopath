@@ -14,6 +14,8 @@
     <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td></tr>
   {% empty %}<tr><td colspan="4" class="muted empty-row">No {% if confirmed_only %}confirmed {% endif %}aircraft assigned to this operator.</td></tr>{% endfor %}
   </table></div>
+{% if programs %}<div class="card"><h2 style="margin-top:0">Programs</h2>
+  <table>{% for p in programs %}<tr data-href="{% url 'program_detail' p.pk %}{% if confirmed_only %}?confirmed=1{% endif %}"><td><a href="{% url 'program_detail' p.pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ p.name }}</a></td></tr>{% endfor %}</table></div>{% endif %}
 <div class="card"><h2 style="margin-top:0">Bases</h2>
   <table><tr><th>Base</th><th class="n">Missions</th></tr>
   {% for pk, name, n in bases %}<tr data-href="{% url 'site_detail' pk %}"><td><a href="{% url 'site_detail' pk %}">{{ name }}</a></td><td class="n">{{ n|intcomma }}</td></tr>

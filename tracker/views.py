@@ -27,6 +27,7 @@ from .models import (
     Mission,
     MonthlyAggregate,
     Operator,
+    Program,
     RebuildRequest,
     Site,
 )
@@ -109,17 +110,21 @@ def dashboard(request):
 
 
 def aircraft_list(request):
-    qs = Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related("operator", "base", "inferred_base")
+    qs = Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related("operator", "program", "base", "inferred_base")
     q = request.GET.get("q", "").strip()
     if q:
         qs = qs.filter(Q(tail_number__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
-                       | Q(program_name__icontains=q))
+                       | Q(program__name__icontains=q))
     if request.GET.get("status"):
         qs = qs.filter(status=request.GET["status"])
     if request.GET.get("operator") == "none":
         qs = qs.filter(operator__isnull=True)
     elif request.GET.get("operator"):
         qs = qs.filter(operator_id=request.GET["operator"])
+    if request.GET.get("program") == "none":
+        qs = qs.filter(program__isnull=True)
+    elif request.GET.get("program"):
+        qs = qs.filter(program_id=request.GET["program"])
     if request.GET.get("base"):
         qs = qs.filter(Q(base_id=request.GET["base"]) | Q(base__isnull=True, inferred_base_id=request.GET["base"]))
     landed_at = None
@@ -127,10 +132,11 @@ def aircraft_list(request):
         landed_at = get_object_or_404(Site, pk=request.GET["site"])
         qs = qs.filter(pk__in=Leg.objects.filter(source=SOURCE, end_site=landed_at).values("aircraft_id"))
     qs, sort = _sorted(qs, request, {"tail_number", "icao_hex", "make_model", "status", "qualifying_visits",
-                                     "first_seen", "last_seen", "operator__name"}, "tail_number")
+                                     "first_seen", "last_seen", "operator__name", "program__name"}, "tail_number")
     bases = Site.objects.filter(Q(based_aircraft__isnull=False) | Q(inferred_based_aircraft__isnull=False)).distinct()
     return render(request, "tracker/aircraft_list.html", {
         "page": _page(request, qs), "sort": sort, "filter_qs": _filter_qs(request), "operators": Operator.objects.all(), "bases": bases,
+        "programs": Program.objects.all(),
         "statuses": [s for s in Aircraft.STATUS_CHOICES if s[0] in Aircraft.VISIBLE],
         "landed_at": landed_at, "clear_site_qs": _filter_qs(request, drop="site"),
     })
@@ -192,6 +198,31 @@ def site_detail(request, pk):
     })
 
 
+def program_detail(request, pk):
+    program = get_object_or_404(Program.objects.select_related("operator"), pk=pk)
+    aircraft = (Aircraft.objects.filter(program=program, status__in=_statuses(request))
+                .select_related("operator", "base", "inferred_base").order_by("tail_number"))
+    missions = Mission.objects.filter(source=SOURCE, aircraft__program=program, aircraft__status__in=_statuses(request))
+    labels = [code for code, _ in Mission.LABELS]
+    label_names = dict(Mission.LABELS)
+    per_month = defaultdict(Counter)
+    flows = Counter()
+    for m in missions.select_related("origin_site", "destination_site"):
+        per_month[local_day(m.start_ts).replace(day=1)][m.label] += 1
+        if m.origin_site_id or m.destination_site_id:
+            flows[(m.origin_site, m.destination_site, label_names[m.label])] += 1
+    months = sorted(per_month, reverse=True)
+    return render(request, "tracker/program_detail.html", {
+        "program": program,
+        "aircraft": aircraft,
+        "labels": Mission.LABELS,
+        "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
+        "total": sum(sum(c.values()) for c in per_month.values()),
+        "flows": flows.most_common(15),
+        "confirmed_only": _confirmed_only(request),
+    })
+
+
 def operator_detail(request, pk):
     operator = get_object_or_404(Operator, pk=pk)
     aircraft = (Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
@@ -219,6 +250,7 @@ def operator_detail(request, pk):
         "total": sum(sum(c.values()) for c in per_month.values()),
         "flows": flows.most_common(15),
         "bases": [(pk, base_names[pk], n) for pk, n in bases.most_common()],
+        "programs": operator.programs.all(),
         "confirmed_only": _confirmed_only(request),
     })
 
@@ -321,7 +353,7 @@ def _site_from_label(label):
 @admin_required
 def review_queue(request):
     queue = (Aircraft.objects.filter(status=Aircraft.DISCOVERED)
-             .select_related("inferred_base", "base", "operator").order_by("-discovered_at", "pk"))
+             .select_related("inferred_base", "base", "operator", "program").order_by("-discovered_at", "pk"))
     page = Paginator(queue, 25).get_page(request.GET.get("page"))
     # Suggestions are rendered once per page (not once per card) to keep the page small on phones.
     hints = Aircraft.objects.exclude(operator_hint="").values_list("operator_hint", flat=True).distinct()
@@ -338,6 +370,7 @@ def review_queue(request):
         "page": page,
         "total": page.paginator.count,
         "operator_options": operator_options,
+        "program_options": Program.objects.values_list("name", flat=True),
         "site_labels": [_site_label(s) for s in sites],
         "base_labels": {a.pk: _site_label(a.base) for a in page if a.base},
     })
@@ -363,6 +396,16 @@ def review_action(request, pk):
         aircraft.save(update_fields=["operator"])
         _log(request.user, aircraft, f"Review: operator set to {op or 'none'}")
         messages.success(request, f"{aircraft}: operator {op or 'cleared'}.")
+    elif action == "program":
+        name = " ".join(request.POST.get("program_name", "").split())[:200]
+        program = None
+        if name:  # an existing program matches ignoring case; a new one is flown by this aircraft's operator
+            program = Program.objects.filter(name__iexact=name).first() or Program.objects.create(
+                name=name, operator=aircraft.operator)
+        aircraft.program = program
+        aircraft.save(update_fields=["program"])
+        _log(request.user, aircraft, f"Review: program set to {program or 'none'}")
+        messages.success(request, f"{aircraft}: program {program or 'cleared'}.")
     elif action == "accept_base":
         aircraft.base = aircraft.inferred_base
         aircraft.save(update_fields=["base"])

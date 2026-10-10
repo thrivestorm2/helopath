@@ -84,7 +84,7 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
    by one source. Evaluation sources (`adsbx`) get legs and `CoverageComparison` rows, never `Aircraft`.
 3. **Rebuildable.** `rebuild --source` drops and re-derives everything from the retained
    `RawTrace` rows (the gzip trace files exactly as downloaded).
-   Aircraft `status`, `operator`, `base`, `notes` and cluster dismissals (kept by location) survive.
+   Aircraft `status`, `operator`, `program`, `base`, `notes` and cluster dismissals (kept by location) survive.
 4. **Attribution.** ODbL footer on every page, the admin, and the CSV export.
 5. **No patient information.** No patient fields exist; notes fields carry a warning; missions are "inferred".
 6. **No employer-derived data.** Fleet from discovery, sites from FAA data, nothing else imported.
@@ -122,6 +122,10 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   containing the cluster) as a Hospital helipad. Suggestions only; an admin creates the site.
 - A leg that ends in `signal_lost` is bridged to the next leg's departure (within 2 h), so a hospital landing
   below coverage still counts if the aircraft is seen lifting off from that pad.
+- Programs are the service name on the aircraft (often hospital-branded), separate from the operator that flies
+  it. They are records of their own: add them in the admin or by typing a name in a Review queue card (a new one
+  takes that aircraft's operator), link aircraft to them, and open a program's page for its aircraft, missions and
+  routes. Program pages count missions directly; flow aggregates and the CSV export stay per operator.
 - Confirm/reject refreshes missions and aggregates immediately; site edits need a rebuild (queued button,
   processed nightly, or `manage.py rebuild`).
 

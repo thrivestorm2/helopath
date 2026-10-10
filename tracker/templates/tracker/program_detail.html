@@ -1,0 +1,37 @@
+{% extends "tracker/base.html" %}{% load humanize %}
+{% block content %}
+<h1>{{ program.name }}</h1>
+<p class="muted">Program{% if program.operator %} flown by <a href="{% url 'operator_detail' program.operator_id %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.operator }}</a>{% endif %}
+  · {{ aircraft|length }} aircraft · {{ total|intcomma }} inferred missions
+  {% if is_admin %}· <a href="{% url 'admin:tracker_program_change' program.pk %}">Edit</a>{% endif %}</p>
+<form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+
+<h2>Aircraft</h2>
+<div class="scroll"><table class="stack"><tr class="head"><th>Tail</th><th>Make / model</th><th>Operator</th><th>Base</th><th>Status</th></tr>
+{% for a in aircraft %}
+<tr data-href="{% url 'aircraft_detail' a.pk %}"><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td><td data-label="Make / model">{{ a.make_model|default:"—" }}</td>
+  <td data-label="Operator">{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
+  <td data-label="Base">{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
+  <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td></tr>
+{% empty %}<tr><td colspan="5" class="muted empty-row">No {% if confirmed_only %}confirmed {% endif %}aircraft in this program yet.{% if is_admin %} Link aircraft from their Edit page or the Review queue.{% endif %}</td></tr>{% endfor %}
+</table></div>
+
+<h2>Missions per month</h2>
+<div class="scroll"><table>
+<tr><th>Month</th>{% for code, label in labels %}<th class="n">{{ label }}</th>{% endfor %}<th class="n">Total</th></tr>
+{% for month, counts, tot in month_rows %}
+<tr><td class="nowrap">{{ month|date:"Y-m" }}</td>{% for c in counts %}<td class="n">{{ c|intcomma }}</td>{% endfor %}<td class="n"><strong>{{ tot|intcomma }}</strong></td></tr>
+{% empty %}<tr><td colspan="7" class="muted">No missions yet.</td></tr>{% endfor %}
+</table></div>
+
+<h2>Busiest routes</h2>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>From</th><th></th><th>To</th><th>Type</th><th class="n">Missions</th></tr>
+{% for flow, n in flows %}
+<tr><td data-label="From">{% if flow.0 %}<a href="{% url 'site_detail' flow.0.pk %}">{{ flow.0.name }}</a>{% else %}<span class="muted">scene / unknown</span>{% endif %}</td><td class="arrow">→</td>
+  <td data-label="To">{% if flow.1 %}<a href="{% url 'site_detail' flow.1.pk %}">{{ flow.1.name }}</a>{% else %}—{% endif %}</td>
+  <td data-label="Type">{{ flow.2 }}</td><td class="n" data-label="Missions">{{ n|intcomma }}</td></tr>
+{% empty %}<tr><td colspan="5" class="muted empty-row">No routes yet.</td></tr>{% endfor %}
+</table></div>
+<p class="muted">Missions are inferred from public ADS-B positions.</p>
+{% endblock %}
