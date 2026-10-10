@@ -66,7 +66,10 @@ class WorkerTests(TestCase):
         RebuildRequest.objects.create(source="adsblol")
         with mock.patch("tracker.ingest.pipeline.rebuild") as rebuild:
             self.assertEqual(tick(now=NOON, log=quiet), "rebuild")
-        rebuild.assert_called_once_with("adsblol")
+        rebuild.assert_called_once_with("adsblol", progress=mock.ANY)
+        progress = rebuild.call_args.kwargs["progress"]
+        progress("building legs: aircraft 1 of 9")  # what the admins' banner shows
+        self.assertEqual(WorkerState.get().current, "Rebuild: building legs: aircraft 1 of 9")
         self.assertFalse(RebuildRequest.objects.filter(processed_at__isnull=True).exists())
 
     def test_restart_resumes_backfill_and_fails_other_running_tasks(self):

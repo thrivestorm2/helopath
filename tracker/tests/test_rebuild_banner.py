@@ -74,3 +74,42 @@ class RebuildBannerTests(TestCase):
         self.client.post(reverse("operations"), {"kind": OpsTask.REBUILD})
         state = WorkerState.get()
         self.assertEqual((state.rebuild_reason, state.rules_version), ("", PIPELINE_VERSION))
+
+
+class RebuildProgressTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="x", is_staff=True)
+        self.admin.groups.add(Group.objects.get(name="Admin"))
+        self.client.force_login(self.admin)
+
+    def test_progress_banner_while_running_and_status_endpoint(self):
+        self.client.post(reverse("queue_rebuild"), {"source": "adsblol"})
+        r = self.client.get(reverse("dashboard"))
+        self.assertContains(r, 'class="rebuild-banner running"')
+        self.assertContains(r, "queued; the worker starts it within a minute")
+        self.assertNotContains(r, ">Queue rebuild</button>")  # nothing to click twice
+        WorkerState.objects.filter(pk=1).update(current="Rebuild: building legs: aircraft 41 of 120")
+        r = self.client.get(reverse("site_list"))
+        self.assertContains(r, "building legs: aircraft 41 of 120")
+        self.assertEqual(self.client.get(reverse("rebuild_status")).json(),
+                         {"active": True, "step": "building legs: aircraft 41 of 120"})
+        RebuildRequest.objects.update(processed_at=timezone.now())
+        WorkerState.objects.filter(pk=1).update(current="")
+        self.assertEqual(self.client.get(reverse("rebuild_status")).json(), {"active": False, "step": ""})
+        self.assertNotContains(self.client.get(reverse("dashboard")), "rebuild-banner")
+
+    def test_second_click_does_not_queue_another(self):
+        self.client.post(reverse("queue_rebuild"), {"source": "adsblol"})
+        r = self.client.post(reverse("queue_rebuild"), {"source": "adsblol"}, follow=True)
+        self.assertEqual(RebuildRequest.objects.count(), 1)
+        self.assertContains(r, "A rebuild is already queued or running")
+        self.client.post(reverse("operations"), {"kind": OpsTask.REBUILD})
+        self.assertFalse(OpsTask.objects.filter(kind=OpsTask.REBUILD).exists())  # nor from Operations
+
+    def test_viewers_never_see_progress(self):
+        RebuildRequest.objects.create(source="adsblol")
+        viewer = User.objects.create_user("v", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        self.assertNotContains(self.client.get(reverse("dashboard")), "rebuild-banner")
+        self.assertEqual(self.client.get(reverse("rebuild_status")).status_code, 403)

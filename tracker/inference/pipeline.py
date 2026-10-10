@@ -90,7 +90,7 @@ def build_legs_for_hex(source, hexid, index, adapter=None):
     return len(results)
 
 
-def build_legs(source, hexes=None):
+def build_legs(source, hexes=None, progress=None):
     retained = rawstore.hexes(source)
     index = site_index()
     adapter = get_adapter(source)
@@ -100,7 +100,10 @@ def build_legs(source, hexes=None):
         targets = sorted(set(hexes) & retained)
         Leg.objects.filter(source=source, hex__in=set(hexes) - retained).delete()  # nothing retained any more
     total = 0
-    for hexid in targets:
+    step = max(1, len(targets) // 20)  # about 20 progress updates
+    for i, hexid in enumerate(targets):
+        if progress and i % step == 0:
+            progress(f"building legs: aircraft {i + 1:,} of {len(targets):,}")
         total += build_legs_for_hex(source, hexid, index, adapter)
     return total
 
@@ -513,25 +516,33 @@ def build_aggregates(source):
     return len(rows)
 
 
-def build_downstream(source):
+def build_downstream(source, progress=None):
     """Everything after legs. Cheap enough to run in full every night."""
+    progress = progress or (lambda message: None)
+    progress("discovering aircraft")
     stats = {"discovered": run_discovery(source)}
+    progress("finding landing clusters")
     stats["clusters"] = build_clusters(source)
+    progress("chaining missions")
     stats["missions"] = build_missions(source)
+    progress("totalling monthly flows")
     stats["aggregates"] = build_aggregates(source)
     return stats
 
 
-def rebuild(source):
-    """Drop and rebuild every derived table for one source from retained raw files."""
+def rebuild(source, progress=None):
+    """Drop and rebuild every derived table for one source from retained raw files. `progress(message)` is
+    called as it goes (for the admins' progress banner)."""
+    if progress:
+        progress("clearing derived tables")
     with transaction.atomic():
         MonthlyAggregate.objects.filter(source=source).delete()
         Mission.objects.filter(source=source).delete()
         LandingCluster.objects.filter(source=source).delete()
         Leg.objects.filter(source=source).delete()
-    stats = {"legs": build_legs(source)}
+    stats = {"legs": build_legs(source, progress=progress)}
     if source == settings.PRIMARY_SOURCE:  # evaluation sources never create Aircraft rows
-        stats.update(build_downstream(source))
+        stats.update(build_downstream(source, progress))
     return stats
 
 
