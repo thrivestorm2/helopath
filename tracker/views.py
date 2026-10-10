@@ -18,6 +18,7 @@ from django.views.decorators.http import require_POST
 from .inference.pipeline import local_day
 from . import places
 from .hangars import based_aircraft, suggest_hangars
+from .lookup import call_sign_suggestions, lookup_links, program_suggestions
 from .models import (
     AutoConfirmRule,
     PlaceSuggestion,
@@ -34,7 +35,7 @@ from .models import (
     Site,
 )
 from .ops import queue_refresh
-from .roles import admin_required
+from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
 
 SOURCE = "adsblol"  # Phase 1 dashboards show one source; never mixed (guardrail 2)
@@ -115,7 +116,7 @@ def aircraft_list(request):
     qs = Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related("operator", "program", "base", "inferred_base")
     q = request.GET.get("q", "").strip()
     if q:
-        qs = qs.filter(Q(tail_number__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
+        qs = qs.filter(Q(tail_number__icontains=q) | Q(call_sign__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
                        | Q(program__name__icontains=q))
     if request.GET.get("status"):
         qs = qs.filter(status=request.GET["status"])
@@ -133,8 +134,9 @@ def aircraft_list(request):
     if request.GET.get("site", "").isdigit():  # aircraft with a resolved arrival there, as counted on the site page
         landed_at = get_object_or_404(Site, pk=request.GET["site"])
         qs = qs.filter(pk__in=Leg.objects.filter(source=SOURCE, end_site=landed_at).values("aircraft_id"))
-    qs, sort = _sorted(qs, request, {"tail_number", "icao_hex", "make_model", "status", "qualifying_visits",
-                                     "first_seen", "last_seen", "operator__name", "program__name"}, "tail_number")
+    qs, sort = _sorted(qs.annotate(name=Aircraft.sort_name()), request,
+                       {"name", "icao_hex", "make_model", "status", "qualifying_visits", "first_seen", "last_seen",
+                        "operator__name", "program__name"}, "name")
     bases = Site.objects.filter(Q(based_aircraft__isnull=False) | Q(inferred_based_aircraft__isnull=False)).distinct()
     return render(request, "tracker/aircraft_list.html", {
         "page": _page(request, qs), "sort": sort, "filter_qs": _filter_qs(request), "operators": Operator.objects.all(), "bases": bases,
@@ -158,11 +160,34 @@ def aircraft_detail(request, pk):
     # Most visited hospitals: resolved landings at hospital helipads, busiest first.
     most_visited = (legs.filter(end_site__site_type=Site.HOSPITAL).values("end_site", "end_site__name")
                     .annotate(n=Count("pk")).order_by("-n", "end_site__name")[:5])
+    admin = is_admin(request.user)
     return render(request, "tracker/aircraft_detail.html", {
+        "lookup_links": lookup_links(aircraft),
+        "call_sign_suggestions": call_sign_suggestions(aircraft, SOURCE) if admin else [],
+        "program_suggestions": program_suggestions(aircraft) if admin else [],
         "aircraft": aircraft, "page": page, "most_visited": most_visited, "base": base, "hangar": hangar, "hangar_days": hangar_days,
         "tracks": [{"id": leg.pk, "state": leg.end_state, "pts": [[p[0], p[1]] for p in leg.simplified_track]}
                    for leg in page],
     })
+
+
+@require_POST
+@admin_required
+def aircraft_apply(request, pk):
+    """One-tap "Use" for a suggested call sign or program on the aircraft page."""
+    aircraft = get_object_or_404(Aircraft, pk=pk)
+    field = request.POST.get("field")
+    if field == "call_sign":
+        aircraft.call_sign = " ".join(request.POST.get("value", "").split())[:60]
+        aircraft.save(update_fields=["call_sign"])
+        _log(request.user, aircraft, f"Call sign set to {aircraft.call_sign or 'none'}")
+        messages.success(request, f"Call sign set to {aircraft.call_sign}." if aircraft.call_sign else "Call sign cleared.")
+    elif field == "program":
+        aircraft.program = get_object_or_404(Program, pk=request.POST.get("value") or 0)
+        aircraft.save(update_fields=["program"])
+        _log(request.user, aircraft, f"Program set to {aircraft.program}")
+        messages.success(request, f"Program set to {aircraft.program}.")
+    return redirect(reverse("aircraft_detail", args=[aircraft.pk]) + "#lookup")
 
 
 def site_list(request):
@@ -261,7 +286,7 @@ def route_map(request):
             if leg.end_site_id is None:
                 points.append({"lat": round(leg.end_lat, 5), "lon": round(leg.end_lon, 5),
                                "lost": leg.end_state == Leg.LOST, "day": local_day(leg.end_ts).isoformat(),
-                               "tail": m.aircraft.tail_number,
+                               "tail": m.aircraft.display_name,
                                "url": reverse("aircraft_detail", args=[m.aircraft_id])})
 
     def pick(model, key):
@@ -279,7 +304,7 @@ def route_map(request):
 def program_detail(request, pk):
     program = get_object_or_404(Program.objects.select_related("operator"), pk=pk)
     aircraft = (Aircraft.objects.filter(program=program, status__in=_statuses(request))
-                .select_related("operator", "base", "inferred_base").order_by("tail_number"))
+                .select_related("operator", "base", "inferred_base").order_by(Aircraft.sort_name()))
     missions = Mission.objects.filter(source=SOURCE, aircraft__program=program, aircraft__status__in=_statuses(request))
     labels = [code for code, _ in Mission.LABELS]
     per_month = defaultdict(Counter)
@@ -319,7 +344,7 @@ def set_weather_hangar(request, pk):
 def operator_detail(request, pk):
     operator = get_object_or_404(Operator, pk=pk)
     aircraft = list(Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
-                    .select_related("program", "base", "inferred_base").order_by("tail_number"))
+                    .select_related("program", "base", "inferred_base").order_by(Aircraft.sort_name()))
     # Aircraft grouped by program: the operator's programs (even with no aircraft shown) by name, then any other
     # program its aircraft carry, then those with none. Only grouped when there is a program to group by.
     groups = {p: [] for p in operator.programs.all()}

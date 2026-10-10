@@ -86,3 +86,8 @@ a.map-link { white-space: nowrap; }
 
 /* Aircraft page: most visited hospitals, one per line */
 td .visit + .visit { margin-top: 4px; }
+
+/* Aircraft page: look-up links and suggestions */
+.lookup-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+#lookup h3 { font-size: 15px; margin: 16px 0 6px; }
+form.suggestion { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }

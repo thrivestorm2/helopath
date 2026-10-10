@@ -54,7 +54,7 @@ class AircraftResource(resources.ModelResource):
     class Meta:
         model = Aircraft
         import_id_fields = ("tail_number",)
-        fields = ("tail_number", "icao_hex", "status", "origin", "operator", "program", "base",
+        fields = ("tail_number", "call_sign", "icao_hex", "status", "origin", "operator", "program", "base",
                   "active_from", "active_to", "notes")
 
     def before_save_instance(self, instance, row, **kwargs):
@@ -137,10 +137,10 @@ class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
 @admin.register(Aircraft)
 class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     resource_classes = [AircraftResource]
-    list_display = ("tail_number", "icao_hex", "status", "origin", "operator", "base", "inferred_base",
+    list_display = ("tail_number", "call_sign", "icao_hex", "status", "origin", "operator", "base", "inferred_base",
                     "qualifying_visits", "last_seen")
     list_filter = ("status", "origin", "operator", "program")
-    search_fields = ("tail_number", "icao_hex", "program__name")
+    search_fields = ("tail_number", "call_sign", "icao_hex", "program__name")
     autocomplete_fields = ("operator", "program", "base")
     readonly_fields = ("inferred_base", "inferred_base_lat", "inferred_base_lon", "make_model", "registrant_hint",
                        "callsign_hint", "operator_hint", "top_hospitals", "qualifying_visits",
@@ -148,7 +148,7 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
                        "discovery_rule")
     fieldsets = (
         (None, {"fields": ("tail_number", "icao_hex", "status", "origin")}),
-        ("Admin-owned", {"fields": ("operator", "program", "base", "active_from", "active_to", "notes")}),
+        ("Admin-owned", {"fields": ("call_sign", "operator", "program", "base", "active_from", "active_to", "notes")}),
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
 
