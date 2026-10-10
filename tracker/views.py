@@ -935,7 +935,7 @@ def site_map(request):
             info.append(f"Weather hangar: {s.weather_hangar.name}")
         if hangar_for.get(s.pk):
             info.append("Also weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk]))
-        markers.append(marker(kind, s, info))
+        markers.append({**marker(kind, s, info), "base_too": kind == "hospital"})
     for s in sorted(hangars.values(), key=lambda s: s.name):
         markers.append(marker("hangar", s, ["Weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk])]))
     for s in hospitals.order_by("name"):
