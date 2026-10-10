@@ -40,11 +40,12 @@ class SiteMapTests(TestCase):
     def test_all_sites_with_kinds_and_info(self):
         m, r = self.markers()
         self.assertEqual({k: v["kind"] for k, v in m.items()}, {
-            "Base One": "base", "Base Empty": "base", "OSF St Francis": "base",  # a hospital that is a base
+            "Base One": "base", "Base Empty": "base", "OSF St Francis": "hospital",  # a hospital base: hospital
             "Airport KPIA": "hangar", "Carle": "hospital"})
         self.assertEqual(m["Base One"]["info"], ["Peoria, IL", "Base · 1 aircraft: LIFE 1 (N911LF)", "Air Methods",
                                                  "Weather hangar: Airport KPIA"])
-        self.assertIn("Also a hospital helipad", m["OSF St Francis"]["info"])
+        self.assertEqual(m["OSF St Francis"]["info"][:3], ["0 landings in the last 90 days",
+                                                           "Also a base · 1 aircraft: N2PH", "PHI"])
         self.assertIn("Hangar: at the base", m["OSF St Francis"]["info"])
         self.assertEqual(m["Airport KPIA"]["info"], ["Weather hangar for Base One"])
         self.assertEqual(m["Carle"]["info"], ["1 landing in the last 90 days"])

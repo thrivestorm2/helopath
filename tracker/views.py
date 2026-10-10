@@ -909,14 +909,22 @@ def site_map(request):
         return {"kind": kind, "name": s.name, "lat": round(s.lat, 5), "lon": round(s.lon, 5),
                 "url": reverse("site_detail", args=[s.pk]), "info": [i for i in [place(s), *info] if i]}
 
+    def landings_line(s):
+        n = landings.get(s.pk, 0)
+        return f"{n:,} landing{'s' if n != 1 else ''} in the last 90 days" + (" by these aircraft" if filtered else "")
+
     markers = []
     for s in sorted(bases.values(), key=lambda s: s.name):
         crew = based.get(s.pk, [])
         names = [a.display_name for a in crew[:6]] + ([f"+{len(crew) - 6} more"] if len(crew) > 6 else [])
         operators = sorted({a.operator.name for a in crew if a.operator})
-        info = [f"Base · {len(crew)} aircraft" + (f": {', '.join(names)}" if names else ""),
-                ", ".join(operators)]
-        if s.site_type != Site.BASE:
+        # A hospital that is also a base is shown as a hospital, with its base details.
+        kind = "hospital" if s.site_type == Site.HOSPITAL else "base"
+        info = [f"{'Also a base' if kind == 'hospital' else 'Base'} · {len(crew)} aircraft"
+                + (f": {', '.join(names)}" if names else ""), ", ".join(operators)]
+        if kind == "hospital":
+            info.insert(0, landings_line(s))
+        elif s.site_type != Site.BASE:
             info.append(f"Also a {s.get_site_type_display().lower()}")
         if s.weather_hangar_id == s.pk:
             info.append("Hangar: at the base")
@@ -924,13 +932,11 @@ def site_map(request):
             info.append(f"Weather hangar: {s.weather_hangar.name}")
         if hangar_for.get(s.pk):
             info.append("Also weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk]))
-        markers.append(marker("base", s, info))
+        markers.append(marker(kind, s, info))
     for s in sorted(hangars.values(), key=lambda s: s.name):
         markers.append(marker("hangar", s, ["Weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk])]))
     for s in hospitals.order_by("name"):
-        n = landings.get(s.pk, 0)
-        markers.append(marker("hospital", s, [f"{n:,} landing{'s' if n != 1 else ''} in the last 90 days"
-                                              + (" by these aircraft" if filtered else "")]))
+        markers.append(marker("hospital", s, [landings_line(s)]))
 
     shown = [k for k in MAP_KINDS if k in get.getlist("show")] if "f" in get else list(MAP_KINDS)
     counts = Counter(m["kind"] for m in markers)
