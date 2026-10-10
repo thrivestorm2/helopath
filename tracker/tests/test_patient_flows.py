@@ -34,15 +34,20 @@ class PatientFlowTests(TestCase):
         flows = r.context["flows"]
         self.assertEqual((flows["received"], flows["from_scenes"], flows["from_hospitals"], flows["sent"]),
                          (8, 2, 6, 4))
-        self.assertEqual([(s["origin_site__name"], s["n"]) for s in flows["senders"]],
-                         [("Hospital B", 5), ("Hospital D", 1)])
-        self.assertEqual([(s["destination_site__name"], s["n"]) for s in flows["receivers"]], [("Hospital C", 4)])
-        self.assertContains(r, "Patients received and sent")
-        self.assertContains(r, f'<a href="{reverse("site_detail", args=[self.b.pk])}">Hospital B</a>')
+        self.assertEqual(flows["months"], [date(2026, 8, 1), date(2026, 9, 1)])
+        # Rows per facility (scenes are one row), per month, ranked by total; each links to its page.
+        b_link = reverse("site_detail", args=[self.b.pk])
+        self.assertEqual([(name, counts, tot) for name, _, counts, tot in flows["received_rows"]],
+                         [("Hospital B", [2, 3], 5), ("Scenes", [0, 2], 2), ("Hospital D", [0, 1], 1)])
+        self.assertEqual(flows["received_rows"][0][1], b_link)
+        self.assertIn("/routes/map/?origin=none", flows["received_rows"][1][1])  # scenes row opens the map
+        self.assertEqual([(name, counts, tot) for name, _, counts, tot in flows["sent_rows"]],
+                         [("Hospital C", [0, 4], 4)])
+        self.assertContains(r, f'<tr data-href="{b_link}"><td><a href="{b_link}">Hospital B</a>')
         self.assertContains(r, "5 visits where the direction is unknown are not counted")
-        self.assertContains(r, "/routes/map/?origin=none&amp;dest=%d&amp;label=scene" % self.a.pk)  # scene map
         flows = self.client.get(reverse("site_detail", args=[self.a.pk]) + "?confirmed=1").context["flows"]
         self.assertEqual((flows["received"], flows["sent"]), (1, 0))
+        self.assertTrue(flows["received_rows"][0][1].endswith("?confirmed=1"))  # links keep the view
         flows = self.client.get(reverse("site_detail", args=[self.c.pk])).context["flows"]
         self.assertEqual((flows["received"], flows["sent"]), (4, 0))
 

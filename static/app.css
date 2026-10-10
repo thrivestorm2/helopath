@@ -91,3 +91,8 @@ td .visit + .visit { margin-top: 4px; }
 .lookup-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 #lookup h3 { font-size: 15px; margin: 16px 0 6px; }
 form.suggestion { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+
+/* Inline one-tap actions in a line of text (site page header) */
+form.inline { display: inline; margin: 0; }
+button.link { background: none; border: 0; padding: 0; color: #1d4ed8; text-decoration: underline; cursor: pointer; font: inherit; }
+#patients h3 { font-size: 15px; margin: 14px 0 6px; }

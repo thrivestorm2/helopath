@@ -214,23 +214,34 @@ def _with_patient_counts(request, qs):
                        sent=total("origin_site", label="interfacility"))
 
 
-def patient_flows(request, site, limit=10):
-    """Inferred patients received at and sent from a site, with the hospitals on the other end."""
+def patient_flows(request, site, limit=25):
+    """Inferred patients received at and sent from a site, month by month, per hospital on the other end
+    (scenes are one row of the received table). Rows rank by total."""
     aggs = _patient_aggs(request)
     inbound = aggs.filter(destination_site=site, label__in=PATIENT_IN)
-    by_label = dict(inbound.values_list("label").annotate(n=Sum("count")))
-    senders = (inbound.filter(label="interfacility").values("origin_site", "origin_site__name")
-               .annotate(n=Sum("count")).order_by("-n", "origin_site__name")[:limit])
     outbound = aggs.filter(origin_site=site, label="interfacility")
-    receivers = (outbound.values("destination_site", "destination_site__name")
-                 .annotate(n=Sum("count")).order_by("-n", "destination_site__name")[:limit])
+    keep = "?confirmed=1" if _confirmed_only(request) else ""
+    scene_map = route_map_url(request, None, site, "scene")
+    received, sent = defaultdict(Counter), defaultdict(Counter)  # (name, link) -> month -> patients
+    for label, pk, name, month, n in inbound.values_list("label", "origin_site", "origin_site__name", "month",
+                                                          "count"):
+        key = ("Scenes", scene_map) if label == "scene" else (name, reverse("site_detail", args=[pk]) + keep)
+        received[key][month] += n
+    for pk, name, month, n in outbound.values_list("destination_site", "destination_site__name", "month", "count"):
+        sent[(name, reverse("site_detail", args=[pk]) + keep)][month] += n
+    months = sorted({m for table in (received, sent) for c in table.values() for m in c})
+
+    def rows(table):
+        ranked = sorted(table.items(), key=lambda kv: (-sum(kv[1].values()), kv[0][0]))[:limit]
+        return [(name, link, [c[m] for m in months], sum(c.values())) for (name, link), c in ranked]
+
+    total = lambda table: sum(sum(c.values()) for c in table.values())
+    from_scenes = sum(received.get(("Scenes", scene_map), Counter()).values())
     unresolved = aggs.filter(destination_site=site, label="single_hospital_unresolved").aggregate(n=Sum("count"))["n"]
     return {
-        "received": sum(by_label.values()), "from_scenes": by_label.get("scene", 0),
-        "from_hospitals": by_label.get("interfacility", 0), "senders": list(senders),
-        "sent": outbound.aggregate(n=Sum("count"))["n"] or 0, "receivers": list(receivers),
-        "unresolved": unresolved or 0,
-        "scene_map": route_map_url(request, None, site, "scene"),
+        "months": months, "received_rows": rows(received), "sent_rows": rows(sent),
+        "received": total(received), "from_scenes": from_scenes, "from_hospitals": total(received) - from_scenes,
+        "sent": total(sent), "unresolved": unresolved or 0, "scene_map": scene_map,
     }
 
 
@@ -278,8 +289,9 @@ def site_detail(request, pk):
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
         "flows": patient_flows(request, site), "site": site, "months": months, "rows": rows, "n_based": n_based,
-        # Once a hangar is set the card just names it; changing it is done on the admin Edit page.
-        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based and not site.weather_hangar_id else [],
+        # Once a hangar is set the header just names it; changing it is done on the admin Edit page.
+        "hangar_suggestion": next(iter(suggest_hangars(site, SOURCE, limit=1)), None)
+        if n_based and not site.weather_hangar_id else None,
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
     })
 
