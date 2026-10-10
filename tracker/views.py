@@ -165,10 +165,14 @@ def aircraft_detail(request, pk):
     most_visited = (legs.filter(end_site__site_type=Site.HOSPITAL).values("end_site", "end_site__name")
                     .annotate(n=Count("pk")).order_by("-n", "end_site__name")[:5])
     admin = is_admin(request.user)
+    # Suggestions only until the value is set or an admin dismisses them.
+    suggest_call_sign = admin and not aircraft.call_sign and not aircraft.call_sign_reviewed
+    suggest_program = admin and not aircraft.program_id and not aircraft.program_reviewed
     return render(request, "tracker/aircraft_detail.html", {
         "lookup_links": lookup_links(aircraft),
-        "call_sign_suggestions": call_sign_suggestions(aircraft, SOURCE) if admin else [],
-        "program_suggestions": program_suggestions(aircraft) if admin else [],
+        "suggest_call_sign": suggest_call_sign, "suggest_program": suggest_program,
+        "call_sign_suggestions": call_sign_suggestions(aircraft, SOURCE) if suggest_call_sign else [],
+        "program_suggestions": program_suggestions(aircraft) if suggest_program else [],
         "aircraft": aircraft, "page": page, "most_visited": most_visited, "base": base, "hangar": hangar, "hangar_days": hangar_days,
         "tracks": [{"id": leg.pk, "state": leg.end_state, "pts": [[p[0], p[1]] for p in leg.simplified_track]}
                    for leg in page],
@@ -178,10 +182,16 @@ def aircraft_detail(request, pk):
 @require_POST
 @admin_required
 def aircraft_apply(request, pk):
-    """One-tap "Use" for a suggested call sign or program on the aircraft page."""
+    """One-tap "Use" for a suggested call sign or program on the aircraft page, or "Dismiss" to stop suggesting."""
     aircraft = get_object_or_404(Aircraft, pk=pk)
     field = request.POST.get("field")
-    if field == "call_sign":
+    if request.POST.get("action") == "dismiss" and field in ("call_sign", "program"):
+        setattr(aircraft, f"{field}_reviewed", True)
+        aircraft.save(update_fields=[f"{field}_reviewed"])
+        what = "call sign" if field == "call_sign" else "program"
+        _log(request.user, aircraft, f"Dismissed {what} suggestions")
+        messages.success(request, f"No more {what} suggestions for {aircraft}. You can still set one on the Edit page.")
+    elif field == "call_sign":
         aircraft.call_sign = " ".join(request.POST.get("value", "").split())[:60]
         aircraft.save(update_fields=["call_sign"])
         _log(request.user, aircraft, f"Call sign set to {aircraft.call_sign or 'none'}")
