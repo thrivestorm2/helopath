@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -243,6 +243,7 @@ def quality(request):
         "per_base": _state_shares(per_base.items()), "per_site": _state_shares(per_site.items())[:100],
         "end_states": Leg.END_STATES, "zero_sites": zero.order_by("state", "name"),
         "unreviewed_sites": Site.objects.filter(is_active=True, reviewed=False).count(),
+        "gaps_rejoined": legs.aggregate(n=Sum("gaps_bridged"))["n"] or 0,
         "confirmed_only": _confirmed_only(request),
     })
 

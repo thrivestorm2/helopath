@@ -190,6 +190,8 @@ class Leg(models.Model):
     confidence = models.FloatField(default=0)
     simplified_track = models.JSONField(default=list)
     start_on_ground = models.BooleanField(default=False)
+    gaps_bridged = models.PositiveSmallIntegerField(
+        default=0, help_text="Coverage gaps inside this leg that were rejoined (same heading and speed).")
     callsign = models.CharField(max_length=50, blank=True)
     mission = models.ForeignKey(Mission, null=True, blank=True, on_delete=models.SET_NULL, related_name="legs")
     mission_seq = models.PositiveSmallIntegerField(null=True, blank=True)
