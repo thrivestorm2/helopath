@@ -45,7 +45,7 @@ class ProgramTests(TestCase):
         self.assertContains(r, "1 inferred missions")
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         self.assertContains(self.client.get(url),
-                            f'href="{reverse("admin:tracker_program_change", args=[self.program.pk])}">Edit</a>')
+                            f'href="{reverse("admin:tracker_program_change", args=[self.program.pk])}?next={url}">Edit</a>')
 
     def test_linked_from_aircraft_operator_and_list(self):
         link = f'href="{reverse("program_detail", args=[self.program.pk])}'
