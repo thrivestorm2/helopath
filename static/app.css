@@ -5,9 +5,24 @@ header { background:#1d2430; color:#fff; padding:0 16px; display:flex; flex-wrap
 header a { color:#dfe4ec; text-decoration:none; padding:12px 0; display:inline-block; }
 header a.active, header a:hover { color:#fff; box-shadow: inset 0 -3px 0 var(--accent); }
 header .brand { font-weight:700; color:#fff; margin-right:8px; }
-header .spacer { flex:1; }
-header form { display:inline; }
+header nav.menu { display:flex; flex-wrap:wrap; align-items:center; gap:0 18px; flex:1; }
+/* Grouped header menus (details/summary: works without JS; base.html closes the others when one opens). */
+header details.dropdown { position:relative; }
+header details.dropdown summary { list-style:none; cursor:pointer; color:#dfe4ec; padding:12px 0; }
+header details.dropdown summary::-webkit-details-marker { display:none; }
+header details.dropdown summary::after { content:" ▾"; font-size:11px; opacity:.8; }
+header details.dropdown summary.active, header details.dropdown summary:hover { color:#fff; box-shadow: inset 0 -3px 0 var(--accent); }
+header details.dropdown > div { position:absolute; top:100%; left:-12px; z-index:2000; min-width:200px; background:#1d2430;
+  border-radius:0 0 8px 8px; padding:4px 0 8px; box-shadow:0 8px 20px rgba(0,0,0,.25); }
+header details.dropdown.user > div { left:auto; right:-12px; min-width:140px; }
+header details.dropdown > div a, header details.dropdown > div button { display:block; width:100%; text-align:left; padding:10px 16px;
+  white-space:nowrap; }
+header details.dropdown > div a:hover, header details.dropdown > div button:hover { background:#2a3342; box-shadow:none; }
+header form { display:block; margin:0; }
 header button { background:none; border:0; color:#dfe4ec; cursor:pointer; font:inherit; }
+/* Full-width pages (the map). */
+main.full { max-width:none; padding:0; }
+main.full > .rebuild-banner, main.full > .messages { margin:12px 16px; }
 main { max-width:1280px; margin:0 auto; padding:16px; }
 footer { max-width:1280px; margin:24px auto; padding:12px 16px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); }
 h1 { font-size:22px; margin:8px 0 16px; } h2 { font-size:17px; margin:20px 0 8px; }
@@ -42,8 +57,17 @@ tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
 
 @media (max-width: 640px) {
   /* One swipeable menu row instead of four wrapped lines. */
-  header { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 0 16px; }
-  header .spacer { flex: 0 0 8px; }
+  /* Brand and user menu on the first line, the menu on its own line below. */
+  header { justify-content: space-between; gap: 0 12px; }
+  header nav.menu { order: 3; flex-basis: 100%; gap: 0 14px; }
+  header a, header details.dropdown summary { padding: 10px 0; }
+  /* Menu panels open full width under the tapped item, so none runs off screen. */
+  header details.dropdown > div { position: fixed; top: auto; left: 8px; right: 8px; border-radius: 8px; }
+  header details.dropdown.user > div { left: auto; right: 8px; }
+  header nav.menu a.home { display: none; }  /* the brand links to the dashboard */
+  .map-bar { gap: 6px 12px; padding: 8px 12px; }
+  .map-bar select { flex: 1 1 40%; min-width: 0; max-width: none; }
+  .map-toggle .muted { display: none; }
   main { padding: 12px; }
   h1 { font-size: 20px; }
   th, td { padding: 10px 8px; }
@@ -119,3 +143,18 @@ table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--car
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .rebuild-banner .spinner { animation: none; } }
 .cause-text { font-weight: normal; font-size: 13px; }
+
+/* Site map: full page, simple coloured pins (bases blue, hospitals red, weather hangars amber). */
+.map-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--card); }
+.map-bar select { max-width:220px; }
+.map-toggle { display:inline-flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; }
+.site-map { width:100%; height:70vh; }
+.pin { display:inline-block; width:16px; height:16px; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35); box-sizing:content-box; vertical-align:middle; }
+.leaflet-marker-icon .pin, .leaflet-div-icon .pin { cursor:pointer; }
+.pin.base { background:#1d4ed8; border-radius:50%; }
+.pin.hospital { background:#c62828; border-radius:3px; position:relative; }
+.pin.hospital::before, .pin.hospital::after { content:""; position:absolute; background:#fff; left:50%; top:50%; transform:translate(-50%,-50%); }
+.pin.hospital::before { width:10px; height:3px; } .pin.hospital::after { width:3px; height:10px; }
+.pin.hangar { background:#e69500; transform:rotate(45deg); width:13px; height:13px; }
+.map-bar .pin { width:12px; height:12px; } .map-bar .pin.hangar { width:10px; height:10px; }
+.map-bar .pin.hospital::before { width:8px; height:2px; } .map-bar .pin.hospital::after { width:2px; height:8px; }
