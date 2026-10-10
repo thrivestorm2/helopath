@@ -9,15 +9,16 @@
 <h2>Arrivals by operator and month ({{ total }} total)</h2>
 <div class="scroll"><table>
 <tr><th>Operator</th>{% for m in months %}<th class="n">{{ m }}</th>{% endfor %}<th class="n">Total</th></tr>
-{% for op, counts, tot in rows %}<tr><td>{{ op }}</td>{% for c in counts %}<td class="n">{{ c }}</td>{% endfor %}<td class="n">{{ tot }}</td></tr>
+{% for op_id, name, link, counts, tot in rows %}<tr data-href="{{ link }}"><td><a href="{{ link }}">{{ name }}</a></td>{% for c in counts %}<td class="n">{{ c }}</td>{% endfor %}<td class="n">{{ tot }}</td></tr>
 {% empty %}<tr><td class="muted">No resolved arrivals at this site.</td></tr>{% endfor %}
 </table></div>
 <div id="map" class="card" style="padding:0;margin-top:14px;height:360px"></div>
 {% endblock %}
 {% block scripts %}
 <script>
-const map = L.map('map').setView([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], 15);
+const map = L.map('map', {zoomSnap: 0.25}).setView([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], 15);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
-L.circle([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], {radius: {{ site.radius_m }}, color: '#b3261e'}).addTo(map);
+const ring = L.circle([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], {radius: {{ site.radius_m }}, color: '#b3261e'}).addTo(map);
+map.fitBounds(ring.getBounds(), {padding: [24, 24], maxZoom: 18});  // whole landing radius in view
 </script>
 {% endblock %}

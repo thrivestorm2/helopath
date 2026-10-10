@@ -25,7 +25,7 @@
   {% for m, l, mi in months %}<tr><td class="nowrap">{{ m }}</td><td class="n">{{ l|intcomma }}</td><td class="n">{{ mi|intcomma }}</td></tr>
   {% empty %}<tr><td colspan="3" class="muted">No data yet.</td></tr>{% endfor %}</table></div>
 <div class="card"><h2>Missions by operator</h2>
-  <table>{% for pk, name, n in by_operator %}<tr{% if pk %} data-href="{% url 'operator_detail' pk %}{% if confirmed_only %}?confirmed=1{% endif %}"{% endif %}><td>{% if pk %}<a href="{% url 'operator_detail' pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ name }}</a>{% else %}<span class="muted">{{ name }}</span>{% endif %}</td><td class="n">{{ n|intcomma }}</td></tr>
+  <table>{% for pk, name, n, link in by_operator %}<tr data-href="{{ link }}"><td><a href="{{ link }}"{% if not pk %} class="muted"{% endif %}>{{ name }}</a></td><td class="n">{{ n|intcomma }}</td></tr>
   {% empty %}<tr><td class="muted">No missions yet.</td></tr>{% endfor %}</table></div>
 <div class="card"><h2>Missions by base</h2>
   <table>{% for pk, name, n in by_base %}<tr{% if pk %} data-href="{% url 'site_detail' pk %}{% if confirmed_only %}?confirmed=1{% endif %}"{% endif %}><td>{% if pk %}<a href="{% url 'site_detail' pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ name }}</a>{% else %}<span class="muted">{{ name }}</span>{% endif %}</td><td class="n">{{ n|intcomma }}</td></tr>

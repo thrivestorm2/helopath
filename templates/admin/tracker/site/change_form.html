@@ -2,29 +2,61 @@
 {% block extrahead %}{{ block.super }}
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<style>
+  #radius-control { display: flex; align-items: center; gap: 12px; margin: 4px 10px 12px; flex-wrap: wrap; }
+  #radius-slider { flex: 1 1 240px; min-width: 200px; accent-color: #b3261e; height: 32px; }
+  #radius-value { font-weight: 600; min-width: 7em; font-variant-numeric: tabular-nums; }
+</style>
 {% endblock %}
 {% block after_field_sets %}{{ block.super }}
 <fieldset class="module aligned">
   <h2>Map picker</h2>
-  <p class="help" style="margin:8px 10px">Click the map to set latitude/longitude. The circle shows the landing radius.</p>
+  <p class="help" style="margin:8px 10px">Click the map to set latitude/longitude. The red circle is the landing radius: landings inside it count at this site.</p>
   <div id="site-map" style="height:420px;margin:8px 10px"></div>
+  <div id="radius-control">
+    <label for="radius-slider">Landing radius</label>
+    <input type="range" id="radius-slider" min="25" max="3000" step="25" aria-describedby="radius-value">
+    <output id="radius-value" for="radius-slider"></output>
+  </div>
 </fieldset>
 <script>
 (function () {
   const lat = document.getElementById('id_lat'), lon = document.getElementById('id_lon'), rad = document.getElementById('id_radius_m');
-  const start = (lat.value && lon.value) ? [parseFloat(lat.value), parseFloat(lon.value)] : [40.0, -89.4];
-  const map = L.map('site-map').setView(start, lat.value ? 16 : 6);
+  const slider = document.getElementById('radius-slider'), shown = document.getElementById('radius-value');
+  const hasPoint = () => lat.value !== '' && lon.value !== '' && !isNaN(parseFloat(lat.value)) && !isNaN(parseFloat(lon.value));
+  const radius = () => Math.max(1, parseFloat(rad.value) || 300);
+  const map = L.map('site-map', {zoomSnap: 0.25}).setView(hasPoint() ? [parseFloat(lat.value), parseFloat(lon.value)] : [40.0, -89.4], hasPoint() ? 16 : 6);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
   let marker = null, circle = null;
-  function draw() {
-    if (!lat.value || !lon.value) return;
-    const p = [parseFloat(lat.value), parseFloat(lon.value)], r = parseFloat(rad.value || 300);
-    if (!marker) { marker = L.marker(p).addTo(map); circle = L.circle(p, {radius: r, color: '#b3261e'}).addTo(map); }
-    marker.setLatLng(p); circle.setLatLng(p); circle.setRadius(r);
+
+  function label(r) { return r >= 1000 ? (r / 1000).toFixed(r % 1000 ? 2 : 1) + ' km (' + Math.round(r * 3.28084).toLocaleString() + ' ft)'
+                                       : r + ' m (' + Math.round(r * 3.28084).toLocaleString() + ' ft)'; }
+  function syncSlider() {
+    const r = radius();
+    if (r > parseFloat(slider.max)) slider.max = Math.ceil(r / 500) * 500;  // big airports: let the slider reach it
+    slider.value = r;
+    shown.textContent = label(r);
   }
-  map.on('click', e => { lat.value = e.latlng.lat.toFixed(6); lon.value = e.latlng.lng.toFixed(6); draw(); });
-  [lat, lon, rad].forEach(el => el.addEventListener('input', draw));
+  // Zoom so the whole circle is visible, with a little margin.
+  function fitCircle(animate) { if (circle) map.fitBounds(circle.getBounds(), {padding: [24, 24], animate: animate, maxZoom: 18}); }
+  function draw() {
+    syncSlider();
+    if (!hasPoint()) return;
+    const p = [parseFloat(lat.value), parseFloat(lon.value)];
+    if (!marker) { marker = L.marker(p).addTo(map); circle = L.circle(p, {radius: radius(), color: '#b3261e', weight: 2, fillOpacity: 0.15}).addTo(map); }
+    marker.setLatLng(p); circle.setLatLng(p); circle.setRadius(radius());
+  }
+
+  slider.addEventListener('input', () => { rad.value = slider.value; draw(); fitCircle(false); });
+  slider.addEventListener('change', () => fitCircle(true));
+  rad.addEventListener('input', () => { draw(); fitCircle(false); });
+  [lat, lon].forEach(el => el.addEventListener('change', () => { draw(); fitCircle(true); }));
+  map.on('click', e => {
+    lat.value = e.latlng.lat.toFixed(6); lon.value = e.latlng.lng.toFixed(6); draw();
+    if (!map.getBounds().contains(circle.getBounds())) fitCircle(true);  // re-zoom only if the circle no longer fits
+  });
   draw();
+  fitCircle(false);
 })();
 </script>
 {% endblock %}
