@@ -8,6 +8,7 @@ urlpatterns = [
     path("aircraft/<int:pk>/", views.aircraft_detail, name="aircraft_detail"),
     path("aircraft/<int:pk>/apply/", views.aircraft_apply, name="aircraft_apply"),
     path("map/", views.site_map, name="site_map"),
+    path("map/coverage.json", views.coverage_data, name="coverage_data"),
     path("sites/", views.site_list, name="site_list"),
     path("sites/<int:pk>/", views.site_detail, name="site_detail"),
     path("sites/<int:pk>/hangar/", views.set_weather_hangar, name="set_weather_hangar"),

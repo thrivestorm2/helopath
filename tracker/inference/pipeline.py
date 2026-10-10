@@ -15,9 +15,11 @@ from django.db.models import F
 from django.utils import timezone
 
 from .. import rawstore
+from ..coverage import build_coverage
 from ..geo import SiteIndex, haversine_m
 from ..models import (
     Aircraft,
+    CoverageCell,
     DismissedClusterMemory,
     LandingCluster,
     Leg,
@@ -527,6 +529,8 @@ def build_downstream(source, progress=None):
     stats["missions"] = build_missions(source)
     progress("totalling monthly flows")
     stats["aggregates"] = build_aggregates(source)
+    progress("mapping coverage")
+    stats["coverage"] = build_coverage(source)
     return stats
 
 
@@ -537,6 +541,7 @@ def rebuild(source, progress=None):
         progress("clearing derived tables")
     with transaction.atomic():
         MonthlyAggregate.objects.filter(source=source).delete()
+        CoverageCell.objects.filter(source=source).delete()
         Mission.objects.filter(source=source).delete()
         LandingCluster.objects.filter(source=source).delete()
         Leg.objects.filter(source=source).delete()
