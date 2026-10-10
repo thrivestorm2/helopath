@@ -25,6 +25,23 @@ def rebuild_queued():
     WorkerState.objects.filter(pk=1).update(rebuild_reason="", rules_version=PIPELINE_VERSION)
 
 
+def rebuild_active():
+    """True while a rebuild is queued or running (from the banner, the Queue rebuild page or Operations)."""
+    return (RebuildRequest.objects.filter(processed_at__isnull=True).exists()
+            or OpsTask.objects.filter(Q(status=OpsTask.QUEUED) | Q(status=OpsTask.RUNNING),
+                                      kind=OpsTask.REBUILD).exists())
+
+
+def rebuild_progress():
+    """What the running rebuild is doing (or that it is waiting for the worker), or None if none is active."""
+    if not rebuild_active():
+        return None
+    current = WorkerState.get().current
+    if current.lower().startswith("rebuild"):
+        return current.split(":", 1)[1].strip() if ":" in current else "starting"
+    return "queued; the worker starts it within a minute"
+
+
 def banner_reason():
     """Why a rebuild is needed, or None (nothing needed, or one is already queued or running)."""
     state = WorkerState.get()
@@ -34,7 +51,13 @@ def banner_reason():
         reason = "the app was updated with new counting rules"
     else:
         return None
-    pending = (RebuildRequest.objects.filter(processed_at__isnull=True).exists()
-               or OpsTask.objects.filter(Q(status=OpsTask.QUEUED) | Q(status=OpsTask.RUNNING),
-                                         kind=OpsTask.REBUILD).exists())
-    return None if pending else reason
+    return None if rebuild_active() else reason
+
+
+def banner():
+    """("running", what it is doing) or ("needed", why) or None, for the admins' banner."""
+    progress = rebuild_progress()
+    if progress:
+        return ("running", progress)
+    reason = banner_reason()
+    return ("needed", reason) if reason else None

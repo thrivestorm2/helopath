@@ -45,7 +45,7 @@ def run_task(task: OpsTask):
         elif task.kind == OpsTask.BACKFILL:
             run_backfill(settings.BACKFILL_DAYS, log=log)
         elif task.kind == OpsTask.REBUILD:
-            log(str(pipeline.rebuild(settings.PRIMARY_SOURCE)))
+            log(str(pipeline.rebuild(settings.PRIMARY_SOURCE, progress=log)))
         elif task.kind == OpsTask.REFRESH:
             src = settings.PRIMARY_SOURCE
             log(f"auto-confirmed {apply_auto_confirm_rules()} aircraft by rule")

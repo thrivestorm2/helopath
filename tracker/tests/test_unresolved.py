@@ -1,0 +1,88 @@
+from datetime import timedelta
+
+from django.contrib.auth.models import Group, User
+from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from tracker.models import Aircraft, LandingCluster, Leg, Site, WorkerState
+from tracker.resolution import diagnose, radius_suggestions
+
+NOW = timezone.now() - timedelta(days=2)
+
+
+class UnresolvedTests(TestCase):
+    """One leg (or a few) per cause; checks each lands in the right bucket and the fixes offered."""
+
+    def setUp(self):
+        self.hosp = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40.0, lon=-89.0,
+                                        radius_m=300, elevation_ft=600)
+        Site.objects.create(name="Hospital Far", site_type=Site.HOSPITAL, lat=40.5, lon=-89.0, radius_m=300)
+        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
+                                         inferred_base_lat=41.0, inferred_base_lon=-88.0)  # base is not a site
+        self.cluster = LandingCluster.objects.create(source="adsblol", lat=40.8, lon=-88.5, landing_count=5,
+                                                     distinct_aircraft=2, first_seen=NOW, last_seen=NOW)
+
+        def leg(lat, lon, state=Leg.LANDED, alt=None, site=None):
+            Leg.objects.create(hex="a00001", aircraft=self.a, source="adsblol", start_ts=NOW, end_ts=NOW,
+                               start_lat=40, start_lon=-89, end_lat=lat, end_lon=lon, end_state=state,
+                               end_alt_ft=alt, end_site=site)
+
+        leg(40.0, -89.0, site=self.hosp)                       # resolved
+        leg(41.0005, -88.0)                                    # at its base, which is not a site
+        for dlat in (0.005, 0.006, 0.007):                     # ~550-780 m north of Hospital A
+            leg(40.0 + dlat, -89.0)
+        leg(40.8001, -88.5)                                    # repeat spot without a site
+        leg(39.2, -90.2)                                       # one-off: likely a scene
+        leg(39.3, -90.3, state=Leg.LOST, alt=800)              # lost low away from sites
+        leg(39.4, -90.4, state=Leg.LOST, alt=4500)             # lost en route
+
+        self.admin = User.objects.create_user("boss", password="x", is_staff=True)
+        self.admin.groups.add(Group.objects.get(name="Admin"))
+
+    def test_buckets(self):
+        d = diagnose(Leg.objects.all(), "adsblol")
+        self.assertEqual((d.total, d.resolved), (9, 1))
+        self.assertEqual(dict(d.counts), {"base_not_site": 1, "near_site": 3, "unmatched_spot": 1,
+                                          "one_off_landing": 1, "lost_low": 1, "lost_high": 1})
+        self.assertEqual(d.fixable, 5)
+        self.assertAlmostEqual(d.best_rate, 6 / 9)
+
+    def test_radius_suggestion_stops_short_of_the_next_site(self):
+        d = diagnose(Leg.objects.all(), "adsblol")
+        [(site, n, suggested, nearest)] = radius_suggestions(d)
+        self.assertEqual((site, n), (self.hosp, 3))
+        self.assertEqual(suggested, 850)  # 80% of ~556-778 m, rounded up to 50, plus 50
+        self.assertIsNone(nearest)  # no other site within 4 km
+        Site.objects.create(name="Clinic Next Door", site_type=Site.HOSPITAL, lat=40.0, lon=-89.012)  # ~1 km
+        [(_, _, suggested, nearest)] = radius_suggestions(diagnose(Leg.objects.all(), "adsblol"))
+        self.assertLessEqual(suggested, nearest / 2)
+
+    def test_page_and_one_tap_radius(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("unresolved"))
+        self.assertContains(r, "Ended at the aircraft&#x27;s base, which is not a site")
+        self.assertContains(r, ">Add as site</a>")
+        self.assertContains(r, "site_type=base&amp;lat=41.000000&amp;lon=-88.000000")
+        self.assertContains(r, ">Set 850 m</button>")
+        self.assertContains(r, f'{reverse("cluster_queue")}#c{self.cluster.pk}')
+        self.assertContains(self.client.get(reverse("dashboard")), "Why not higher?")
+        r = self.client.post(reverse("set_site_radius", args=[self.hosp.pk]), {"radius_m": 850}, follow=True)
+        self.hosp.refresh_from_db()
+        self.assertEqual(self.hosp.radius_m, 850)
+        self.assertContains(r, "radius 300 m → 850 m")
+        self.assertIn("radius of Hospital A", WorkerState.get().rebuild_reason)  # banner asks for a rebuild
+        self.client.post(reverse("set_site_radius", args=[self.hosp.pk]), {"radius_m": 99999})
+        self.hosp.refresh_from_db()
+        self.assertEqual(self.hosp.radius_m, 850)
+
+    def test_viewers_see_causes_but_cannot_change(self):
+        viewer = User.objects.create_user("v", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        r = self.client.get(reverse("unresolved"))
+        self.assertContains(r, "Signal lost at altitude")
+        self.assertNotContains(r, ">Set 850 m</button>")
+        self.assertNotContains(r, ">Add as site</a>")
+        self.assertEqual(self.client.post(reverse("set_site_radius", args=[self.hosp.pk]),
+                                          {"radius_m": 500}).status_code, 403)

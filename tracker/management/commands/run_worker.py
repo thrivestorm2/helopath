@@ -31,7 +31,11 @@ def tick(now=None, log=print):
 
     if RebuildRequest.objects.filter(processed_at__isnull=True).exists():
         WorkerState.objects.filter(pk=1).update(current="Rebuild")
-        process_rebuild_requests()
+
+        def progress(message):
+            WorkerState.objects.filter(pk=1).update(heartbeat=timezone.now(), current=f"Rebuild: {message}"[:200])
+
+        process_rebuild_requests(progress)
         WorkerState.objects.filter(pk=1).update(current="")
         return "rebuild"
 

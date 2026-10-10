@@ -7,6 +7,7 @@
     <div class="k">Resolved-landing rate, last 90 days</div>
     <div class="v">{% if rate is not None %}{% widthratio resolved total 100 %}%{% else %}—{% endif %}</div>
     <div class="muted">{{ resolved|intcomma }} of {{ total|intcomma }} legs end at an identified site</div>
+    <div><a href="{% url 'unresolved' %}{% if confirmed_only %}?confirmed=1{% endif %}">Why not higher? →</a></div>
   </div>
   <div class="card stat"><div class="k">Aircraft</div>
     <div class="v">{{ aircraft_by_status.confirmed|default:0 }}</div>

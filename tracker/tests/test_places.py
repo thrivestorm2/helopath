@@ -110,8 +110,9 @@ class PlaceLookupTests(TestCase):
     def test_worker_tick_does_lookups_in_spare_time(self):
         from unittest import mock
         cluster(25)
+        noon = timezone.now().replace(hour=12, minute=0)  # before the nightly run, whatever the real time is
         with mock.patch("tracker.places.fetch_overpass", side_effect=fake()):
-            self.assertEqual(tick(log=lambda *_: None), "idle (place lookups: 1)")
+            self.assertEqual(tick(now=noon, log=lambda *_: None), "idle (place lookups: 1)")
 
 
 class ClusterQueueSuggestionTests(TestCase):

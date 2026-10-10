@@ -31,10 +31,15 @@
   <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button>Log out {{ user.username }}</button></form>
 </header>
 <main>
-  {% if rebuild_banner %}<div class="rebuild-banner" role="status">
-    <span>Rebuild needed to apply recent changes: {{ rebuild_banner }}.</span>
-    <form method="post" action="{% url 'queue_rebuild' %}">{% csrf_token %}<input type="hidden" name="source" value="adsblol"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="primary">Queue rebuild</button></form>
-  </div>{% endif %}
+  {% if rebuild_banner %}{% if rebuild_banner.0 == "running" %}
+  <div class="rebuild-banner running" role="status" data-status-url="{% url 'rebuild_status' %}">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>Rebuild in progress: <strong class="rebuild-step">{{ rebuild_banner.1 }}</strong>. Figures are incomplete until it finishes.</span>
+  </div>{% else %}
+  <div class="rebuild-banner" role="status">
+    <span>Rebuild needed to apply recent changes: {{ rebuild_banner.1 }}.</span>
+    <form method="post" action="{% url 'queue_rebuild' %}" onsubmit="this.querySelector('button').disabled = true">{% csrf_token %}<input type="hidden" name="source" value="adsblol"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="primary">Queue rebuild</button></form>
+  </div>{% endif %}{% endif %}
   {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
   {% block content %}{% endblock %}
 </main>
@@ -49,6 +54,20 @@ document.addEventListener('click', function (e) {
   if (e.metaKey || e.ctrlKey) { window.open(row.dataset.href, '_blank'); } else { window.location.href = row.dataset.href; }
 });
 </script>
+{% if rebuild_banner.0 == "running" %}
+<script>
+// Rebuild progress banner: follow the worker every few seconds; offer a reload when it is done.
+(function () {
+  const banner = document.querySelector('.rebuild-banner.running');
+  const step = banner.querySelector('.rebuild-step');
+  const poll = () => fetch(banner.dataset.statusUrl, {credentials: 'same-origin'}).then(r => r.json()).then(s => {
+    if (s.active) { step.textContent = s.step; setTimeout(poll, 8000); return; }
+    banner.classList.remove('running');
+    banner.innerHTML = '<span>Rebuild finished.</span> <a class="button" href="">Reload to see updated figures</a>';
+  }).catch(() => setTimeout(poll, 30000));
+  setTimeout(poll, 8000);
+})();
+</script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

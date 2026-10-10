@@ -54,11 +54,11 @@ def day_done(day, source):
     return IngestRun.objects.filter(day=day, source=source, status=IngestRun.OK).exists()
 
 
-def process_rebuild_requests():
+def process_rebuild_requests(progress=None):
     pending = RebuildRequest.objects.filter(processed_at__isnull=True)
     sources = set(pending.values_list("source", flat=True))
     for source in sources:
-        pipeline.rebuild(source)
+        pipeline.rebuild(source, progress=progress)
     pending.update(processed_at=timezone.now())
     return sources
 

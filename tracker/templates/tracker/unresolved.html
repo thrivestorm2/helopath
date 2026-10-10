@@ -1,0 +1,64 @@
+{% extends "tracker/base.html" %}{% load humanize %}
+{% block content %}
+<h1>Why legs are unresolved <span class="muted" style="font-size:14px">(last 90 days)</span></h1>
+<form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+<div class="grid">
+  <div class="card stat headline"><div class="k">Resolved-landing rate now</div>
+    <div class="v">{% if d.rate is not None %}{% widthratio d.resolved d.total 100 %}%{% else %}—{% endif %}</div>
+    <div class="muted">{{ d.resolved|intcomma }} / {{ d.total|intcomma }} legs</div></div>
+  <div class="card stat"><div class="k">If the fixable ones were fixed</div>
+    <div class="v">{% if d.best_rate is not None %}{% widthratio d.resolved|add:d.fixable d.total 100 %}%{% else %}—{% endif %}</div>
+    <div class="muted">{{ d.fixable|intcomma }} more legs resolved</div></div>
+</div>
+
+<h2>Where the unresolved legs end</h2>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Cause</th><th class="n">Legs</th><th class="n">Share of all legs</th><th>Fixable here</th></tr>
+{% for key, title, text, fixable, n, share in buckets %}
+<tr{% if fixable and n %} data-href="#{{ key }}"{% endif %}><td class="lead wrap">{% if fixable and n %}<a href="#{{ key }}">{{ title }}</a>{% else %}{{ title }}{% endif %}
+  <div class="muted cause-text">{{ text }}</div></td>
+  <td class="n" data-label="Legs">{{ n|intcomma }}</td><td class="n" data-label="Share of all legs">{% widthratio share 1 100 %}%</td>
+  <td data-label="Fixable here">{% if fixable %}<span class="badge confirmed">yes</span>{% else %}<span class="muted">no</span>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+
+<h2 id="base_not_site">Bases that are not sites yet</h2>
+<p class="muted">Each aircraft below keeps returning to a place the tracker found but that is not a site.
+  {% if is_admin %}"Add as site" opens a new base site pre-filled at that spot; check the name and pin, then save.{% endif %}</p>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Aircraft</th><th>Operator</th><th class="n">Legs ending there</th><th></th></tr>
+{% for a, n, add in bases %}
+<tr><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a></td><td data-label="Operator">{{ a.operator|default:"—" }}</td>
+  <td class="n" data-label="Legs ending there">{{ n|intcomma }}</td>
+  <td>{% if is_admin %}<a class="button" href="{{ add }}">Add as site</a>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="4" class="muted empty-row">None: every base is a site.</td></tr>{% endfor %}
+</table></div>
+
+<h2 id="near_site"><span id="radius"></span>Sites whose radius looks too small</h2>
+<p class="muted">Landings just outside these sites' radius. The suggested radius covers most of them but stops short of the
+  next site. Changes take effect after a rebuild (the banner will offer it).</p>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Site</th><th class="n">Legs just outside</th><th class="n">Radius now</th><th class="n">Suggested</th><th class="n">Nearest other site</th><th></th></tr>
+{% for site, n, suggested, nearest in radius_rows %}
+<tr><td class="lead"><a href="{% url 'site_detail' site.pk %}">{{ site.name }}</a> <span class="muted">{{ site.get_site_type_display }}</span></td>
+  <td class="n" data-label="Legs just outside">{{ n|intcomma }}</td><td class="n" data-label="Radius now">{{ site.radius_m }} m</td>
+  <td class="n" data-label="Suggested"><strong>{{ suggested }} m</strong></td>
+  <td class="n" data-label="Nearest other site">{% if nearest %}{{ nearest|floatformat:0|intcomma }} m{% else %}—{% endif %}</td>
+  <td>{% if is_admin %}<form method="post" action="{% url 'set_site_radius' site.pk %}">{% csrf_token %}<input type="hidden" name="radius_m" value="{{ suggested }}"><button>Set {{ suggested }} m</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="6" class="muted empty-row">No site has several landings just outside its radius.</td></tr>{% endfor %}
+</table></div>
+
+<h2 id="unmatched_spot">Repeat landing spots with no site</h2>
+<p class="muted">Create these from the <a href="{% url 'cluster_queue' %}">Cluster queue</a>, which suggests names from OpenStreetMap.</p>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Spot</th><th class="n">Landings there</th><th class="n">Aircraft</th><th>Nearest site</th></tr>
+{% for c, n in spots %}
+<tr data-href="{% url 'cluster_queue' %}#c{{ c.pk }}"><td class="lead"><a href="{% url 'cluster_queue' %}#c{{ c.pk }}"><code>{{ c.lat|floatformat:4 }}, {{ c.lon|floatformat:4 }}</code></a></td>
+  <td class="n" data-label="Landings there">{{ c.landing_count|intcomma }}</td><td class="n" data-label="Aircraft">{{ c.distinct_aircraft }}</td>
+  <td data-label="Nearest site">{% if c.nearest_site %}{{ c.nearest_site.name }} <span class="muted">· {{ c.nearest_site_distance_m|floatformat:0|intcomma }} m</span>{% else %}—{% endif %}</td></tr>
+{% empty %}<tr><td colspan="4" class="muted empty-row">No unmatched repeat spots.</td></tr>{% endfor %}
+</table></div>
+
+<p class="muted">The other causes are expected: scene landings have no site by nature, and lost signal is a receiver
+  coverage limit. The rate counts every leg, so it can never reach 100%.</p>
+{% endblock %}
