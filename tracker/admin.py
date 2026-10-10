@@ -11,6 +11,7 @@ from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 
 from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
+from .ops import queue_refresh
 from .rebuild_flag import flag_rebuild
 
 admin.site.site_header = "Air Medical Tracker admin"
@@ -132,6 +133,12 @@ class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     def aircraft_count(self, obj):
         return obj.n_aircraft
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if obj.operators_filled:
+            queue_refresh(request.user)  # monthly totals are kept per operator
+            self.message_user(request, f"{obj.operators_filled} aircraft in {obj} had no operator; set to {obj.operator}.")
+
     def has_delete_permission(self, request, obj=None):
         if obj is not None and not request.user.is_superuser and obj.aircraft.exists():
             return False
@@ -171,7 +178,11 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
             obj.origin, obj.icao_hex = "manual", obj.icao_hex.lower()
             if obj.status == Aircraft.DISCOVERED:
                 obj.status = Aircraft.CONFIRMED
+        had_operator = obj.operator_id
         super().save_model(request, obj, form, change)
+        if obj.operator_id != had_operator:
+            queue_refresh(request.user)
+            self.message_user(request, f"Operator set to {obj.operator}, the operator of {obj.program}.")
 
     def has_delete_permission(self, request, obj=None):
         return False

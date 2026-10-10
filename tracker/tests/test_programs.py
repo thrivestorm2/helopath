@@ -164,10 +164,18 @@ class ProgramMigrationTests(TransactionTestCase):
         OldAircraft.objects.create(tail_number="N5", icao_hex="b00005")
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
-        executor.migrate(executor.loader.graph.leaf_nodes("tracker"))
-        self.assertEqual(sorted(Program.objects.values_list("name", flat=True)), ["OSF Life Flight", "Shared"])
-        lf = Program.objects.get(name="OSF Life Flight")
+        executor.migrate([("tracker", "0016_rule_program")])
+        apps = executor.loader.project_state([("tracker", "0016_rule_program")]).apps
+        P, A = apps.get_model("tracker", "Program"), apps.get_model("tracker", "Aircraft")
+        self.assertEqual(sorted(P.objects.values_list("name", flat=True)), ["OSF Life Flight", "Shared"])
+        lf = P.objects.get(name="OSF Life Flight")
         self.assertEqual(lf.operator.name, "Air Methods")
         self.assertEqual(set(lf.aircraft.values_list("tail_number", flat=True)), {"N1", "N2"})
-        self.assertIsNone(Program.objects.get(name="Shared").operator)  # operators disagree
-        self.assertIsNone(Aircraft.objects.get(tail_number="N5").program)
+        self.assertIsNone(P.objects.get(name="Shared").operator)  # operators disagree (one is blank)
+        self.assertIsNone(A.objects.get(tail_number="N5").program)
+        # 0017 then fills the known blanks: Shared's only known operator, and N4 with it.
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(executor.loader.graph.leaf_nodes("tracker"))
+        self.assertEqual(Program.objects.get(name="Shared").operator.name, "Air Methods")
+        self.assertEqual(Aircraft.objects.get(tail_number="N4").operator.name, "Air Methods")

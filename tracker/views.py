@@ -202,9 +202,13 @@ def aircraft_apply(request, pk):
         messages.success(request, f"Call sign set to {aircraft.call_sign}." if aircraft.call_sign else "Call sign cleared.")
     elif field == "program":
         aircraft.program = get_object_or_404(Program, pk=request.POST.get("value") or 0)
+        had_operator = aircraft.operator_id
         aircraft.save(update_fields=["program"])
-        _log(request.user, aircraft, f"Program set to {aircraft.program}")
-        messages.success(request, f"Program set to {aircraft.program}.")
+        also = f"; operator set to {aircraft.operator}" if aircraft.operator_id != had_operator else ""
+        if also:
+            queue_refresh(request.user)  # monthly totals are kept per operator
+        _log(request.user, aircraft, f"Program set to {aircraft.program}{also}")
+        messages.success(request, f"Program set to {aircraft.program}{also}.")
     return redirect(reverse("aircraft_detail", args=[aircraft.pk]) + "#lookup")
 
 
@@ -691,9 +695,13 @@ def review_action(request, pk):
             program = Program.objects.filter(name__iexact=name).first() or Program.objects.create(
                 name=name, operator=aircraft.operator)
         aircraft.program = program
+        had_operator = aircraft.operator_id
         aircraft.save(update_fields=["program"])
-        _log(request.user, aircraft, f"Review: program set to {program or 'none'}")
-        messages.success(request, f"{aircraft}: program {program or 'cleared'}.")
+        also = f"; operator set to {aircraft.operator}" if aircraft.operator_id != had_operator else ""
+        if also:
+            queue_refresh(request.user)
+        _log(request.user, aircraft, f"Review: program set to {program or 'none'}{also}")
+        messages.success(request, f"{aircraft}: program {program or 'cleared'}{also}.")
     elif action == "accept_base":
         aircraft.base = aircraft.inferred_base
         aircraft.save(update_fields=["base"])
