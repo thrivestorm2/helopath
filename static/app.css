@@ -83,3 +83,6 @@ a.map-link { white-space: nowrap; }
 .legend .dot.dest { background: #b3261e; }
 
 #hangar .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+/* Aircraft page: most visited hospitals, one per line */
+td .visit + .visit { margin-top: 4px; }

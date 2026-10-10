@@ -3,7 +3,7 @@
 <h1>{{ program.name }}</h1>
 <p class="muted">Program{% if program.operator %} flown by <a href="{% url 'operator_detail' program.operator_id %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.operator }}</a>{% endif %}
   · {{ aircraft|length }} aircraft · {{ total|intcomma }} inferred missions
-  {% if is_admin %}· <a href="{% url 'admin:tracker_program_change' program.pk %}">Edit</a>{% endif %}</p>
+  {% if is_admin %}· <a href="{% url 'admin:tracker_program_change' program.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
 
 <h2>Aircraft</h2>

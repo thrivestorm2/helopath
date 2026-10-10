@@ -2,7 +2,7 @@
 {% block content %}
 <h1>{{ operator.name }}</h1>
 <p class="muted">{% if operator.parent_company %}Part of {{ operator.parent_company }} · {% endif %}{{ aircraft|length }} aircraft · {{ total|intcomma }} inferred missions
-  {% if is_admin %}· <a href="{% url 'admin:tracker_operator_change' operator.pk %}">Edit</a>{% endif %}</p>
+  {% if is_admin %}· <a href="{% url 'admin:tracker_operator_change' operator.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
 
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">

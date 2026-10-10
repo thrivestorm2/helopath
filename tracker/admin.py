@@ -1,8 +1,12 @@
+from urllib.parse import urlencode
+
 from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
 from django.db.models import Count
+from django.http import HttpResponseRedirect
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.html import format_html, format_html_join
 from import_export import fields, resources
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
@@ -12,6 +16,26 @@ from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
 admin.site.site_header = "Air Medical Tracker admin"
 admin.site.site_title = "Air Medical Tracker"
 admin.site.disable_action("delete_selected")  # deactivate instead of delete
+
+
+class ReturnToPageMixin:
+    """Edit links on the app's pages add ?next=<page>; Save then returns there instead of the admin list.
+    The admin form posts back to its own URL, so `next` is still in the query string on save."""
+
+    def _next_url(self, request):
+        nxt = request.GET.get("next", "")
+        ok = nxt.startswith("/") and url_has_allowed_host_and_scheme(nxt, {request.get_host()}, request.is_secure())
+        return nxt if ok else None
+
+    def response_change(self, request, obj):
+        response = super().response_change(request, obj)
+        nxt = self._next_url(request)
+        if nxt and "_save" in request.POST:
+            return HttpResponseRedirect(nxt)
+        if nxt and "_continue" in request.POST and isinstance(response, HttpResponseRedirect):
+            sep = "&" if "?" in response["Location"] else "?"
+            response["Location"] += sep + urlencode({"next": nxt})  # keep it for the next save
+        return response
 
 
 class SiteResource(resources.ModelResource):
@@ -56,7 +80,7 @@ def mark_reviewed(modeladmin, request, queryset):
 
 
 @admin.register(Site)
-class SiteAdmin(ImportExportModelAdmin):
+class SiteAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     resource_classes = [SiteResource]
     list_display = ("name", "site_type", "faa_id", "city", "state", "radius_m", "origin", "reviewed", "is_active")
     list_filter = ("site_type", "state", "reviewed", "is_active", "origin")
@@ -84,7 +108,7 @@ class SiteAdmin(ImportExportModelAdmin):
 
 
 @admin.register(Operator)
-class OperatorAdmin(ImportExportModelAdmin):
+class OperatorAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     list_display = ("name", "parent_company")
     search_fields = ("name", "parent_company")
 
@@ -93,7 +117,7 @@ class OperatorAdmin(ImportExportModelAdmin):
 
 
 @admin.register(Program)
-class ProgramAdmin(ImportExportModelAdmin):
+class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     list_display = ("name", "operator", "aircraft_count")
     list_filter = ("operator",)
     search_fields = ("name", "operator__name")
@@ -111,7 +135,7 @@ class ProgramAdmin(ImportExportModelAdmin):
 
 
 @admin.register(Aircraft)
-class AircraftAdmin(ImportExportModelAdmin):
+class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     resource_classes = [AircraftResource]
     list_display = ("tail_number", "icao_hex", "status", "origin", "operator", "base", "inferred_base",
                     "qualifying_visits", "last_seen")
@@ -119,7 +143,7 @@ class AircraftAdmin(ImportExportModelAdmin):
     search_fields = ("tail_number", "icao_hex", "program__name")
     autocomplete_fields = ("operator", "program", "base")
     readonly_fields = ("inferred_base", "inferred_base_lat", "inferred_base_lon", "make_model", "registrant_hint",
-                       "callsign_hint", "operator_hint", "top_hospitals_hint", "qualifying_visits",
+                       "callsign_hint", "operator_hint", "top_hospitals", "qualifying_visits",
                        "distinct_hospitals", "first_seen", "last_seen", "discovered_at", "discovery_source",
                        "discovery_rule")
     fieldsets = (
@@ -127,6 +151,11 @@ class AircraftAdmin(ImportExportModelAdmin):
         ("Admin-owned", {"fields": ("operator", "program", "base", "active_from", "active_to", "notes")}),
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
+
+    @admin.display(description="Top hospitals")
+    def top_hospitals(self, obj):
+        """One hospital per line, e.g. "OSF Saint Francis (5)"."""
+        return format_html_join(format_html("<br>"), "{}", ((h,) for h in obj.top_hospitals_list)) or "—"
 
     def get_readonly_fields(self, request, obj=None):
         # Auto-discovered identity comes from the registry; manual adds may set it.
