@@ -83,26 +83,32 @@ class RebuildProgressTests(TestCase):
         self.client.force_login(self.admin)
 
     def test_progress_banner_while_running_and_status_endpoint(self):
-        self.client.post(reverse("queue_rebuild"), {"source": "adsblol"})
+        r = self.client.post(reverse("queue_rebuild"), {"source": "adsblol"}, follow=True)
+        self.assertEqual(r.content.count(b'class="rebuild-banner'), 1)  # one banner, no extra "queued" message
+        self.assertNotContains(r, "Rebuild queued;")
         r = self.client.get(reverse("dashboard"))
         self.assertContains(r, 'class="rebuild-banner running"')
+        self.assertContains(r, 'aria-valuenow="0"')
         self.assertContains(r, "queued; the worker starts it within a minute")
         self.assertNotContains(r, ">Queue rebuild</button>")  # nothing to click twice
         WorkerState.objects.filter(pk=1).update(current="Rebuild: building legs: aircraft 41 of 120")
         r = self.client.get(reverse("site_list"))
         self.assertContains(r, "building legs: aircraft 41 of 120")
+        self.assertContains(r, 'style="width:30%"')  # 2 + 84 * 40/120
+        self.assertContains(r, '<span class="pct">30%</span>')
         self.assertEqual(self.client.get(reverse("rebuild_status")).json(),
-                         {"active": True, "step": "building legs: aircraft 41 of 120"})
+                         {"active": True, "step": "building legs: aircraft 41 of 120", "percent": 30})
         RebuildRequest.objects.update(processed_at=timezone.now())
         WorkerState.objects.filter(pk=1).update(current="")
-        self.assertEqual(self.client.get(reverse("rebuild_status")).json(), {"active": False, "step": ""})
+        self.assertEqual(self.client.get(reverse("rebuild_status")).json(),
+                         {"active": False, "step": "", "percent": 100})
         self.assertNotContains(self.client.get(reverse("dashboard")), "rebuild-banner")
 
     def test_second_click_does_not_queue_another(self):
         self.client.post(reverse("queue_rebuild"), {"source": "adsblol"})
         r = self.client.post(reverse("queue_rebuild"), {"source": "adsblol"}, follow=True)
         self.assertEqual(RebuildRequest.objects.count(), 1)
-        self.assertContains(r, "A rebuild is already queued or running")
+        self.assertContains(r, 'class="rebuild-banner running"')  # the banner is the only feedback
         self.client.post(reverse("operations"), {"kind": OpsTask.REBUILD})
         self.assertFalse(OpsTask.objects.filter(kind=OpsTask.REBUILD).exists())  # nor from Operations
 
@@ -113,3 +119,13 @@ class RebuildProgressTests(TestCase):
         self.client.force_login(viewer)
         self.assertNotContains(self.client.get(reverse("dashboard")), "rebuild-banner")
         self.assertEqual(self.client.get(reverse("rebuild_status")).status_code, 403)
+
+
+class ProgressPercentTests(TestCase):
+    def test_steps_map_to_percent(self):
+        from tracker.rebuild_flag import progress_percent
+        self.assertEqual([progress_percent(s) for s in (
+            "queued; the worker starts it within a minute", "clearing derived tables",
+            "building legs: aircraft 1 of 682", "building legs: aircraft 682 of 682",
+            "building legs: aircraft 1,200 of 2,400", "discovering aircraft", "finding landing clusters",
+            "chaining missions", "totalling monthly flows")], [0, 1, 2, 86, 44, 86, 90, 93, 97])
