@@ -148,8 +148,15 @@ def aircraft_detail(request, pk):
     aircraft = get_object_or_404(Aircraft, pk=pk, status__in=Aircraft.VISIBLE)
     legs = aircraft.legs.filter(source=SOURCE).select_related("start_site", "end_site").order_by("-start_ts")
     page = _page(request, legs, 25)
+    # Weather hangar comes from the base: the one set on it, else the base's top suggestion (marked unconfirmed).
+    base = aircraft.base or aircraft.inferred_base
+    hangar, hangar_days = (base.weather_hangar if base else None), None
+    if base and not hangar:
+        top = suggest_hangars(base, SOURCE, limit=1)
+        if top:
+            hangar, hangar_days = top[0][0], top[0][1]
     return render(request, "tracker/aircraft_detail.html", {
-        "aircraft": aircraft, "page": page,
+        "aircraft": aircraft, "page": page, "base": base, "hangar": hangar, "hangar_days": hangar_days,
         "tracks": [{"id": leg.pk, "state": leg.end_state, "pts": [[p[0], p[1]] for p in leg.simplified_track]}
                    for leg in page],
     })
