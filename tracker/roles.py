@@ -4,7 +4,8 @@ from functools import wraps
 from django.core.exceptions import PermissionDenied
 
 VIEWER, ADMIN = "Viewer", "Admin"
-ADMIN_EDITABLE = ["site", "operator", "aircraft", "landingcluster", "autoconfirmrule"]
+ADMIN_EDITABLE = ["site", "operator", "program", "aircraft", "landingcluster", "autoconfirmrule"]
+ADMIN_DELETABLE = ["delete_program"]  # a deleted program only unlinks its aircraft
 
 
 def ensure_groups(**kwargs):
@@ -13,8 +14,8 @@ def ensure_groups(**kwargs):
     Group.objects.get_or_create(name=VIEWER)
     admin, _ = Group.objects.get_or_create(name=ADMIN)
     perms = Permission.objects.filter(content_type__app_label="tracker", content_type__model__in=ADMIN_EDITABLE)
-    # Deactivate instead of delete: admins get add/change/view but not delete.
-    admin.permissions.set([p for p in perms if not p.codename.startswith("delete_")])
+    # Deactivate instead of delete: admins get add/change/view but not delete, except where noted.
+    admin.permissions.set([p for p in perms if not p.codename.startswith("delete_") or p.codename in ADMIN_DELETABLE])
     admin.permissions.add(*Permission.objects.filter(content_type__app_label="admin", codename="view_logentry"))
 
 
