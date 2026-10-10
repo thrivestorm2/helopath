@@ -198,7 +198,8 @@ class LogEntryAdmin(admin.ModelAdmin):
 
 @admin.register(AutoConfirmRule)
 class AutoConfirmRuleAdmin(admin.ModelAdmin):
-    list_display = ("registrant_contains", "operator", "is_active", "created_by", "created_at")
+    list_display = ("registrant_contains", "operator", "program", "is_active", "created_by", "created_at")
+    autocomplete_fields = ("operator", "program")
     list_filter = ("is_active",)
     readonly_fields = ("created_by", "created_at")
 

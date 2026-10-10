@@ -581,7 +581,7 @@ def review_queue(request):
     operator_options = sorted(set(Operator.objects.values_list("name", flat=True)) | set(hints))
     sites = Site.objects.filter(is_active=True, site_type__in=[Site.BASE, Site.AIRPORT, Site.HOSPITAL]).order_by(
         "site_type", "name")
-    rules = list(AutoConfirmRule.objects.filter(is_active=True).select_related("operator"))
+    rules = list(AutoConfirmRule.objects.filter(is_active=True).select_related("operator", "program"))
     for rule in rules:
         rule.confirmed_count = Aircraft.objects.filter(
             status=Aircraft.CONFIRMED, registrant_hint__icontains=rule.registrant_contains).count()

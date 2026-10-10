@@ -40,7 +40,8 @@ class OperatorAcquiredTests(TestCase):
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.operator, self.buyer)
         self.rule.refresh_from_db()
-        self.assertEqual(self.rule.operator, self.buyer)
+        self.assertEqual((self.rule.operator, self.rule.program), (self.buyer, program))  # kept, with the program
+        self.assertTrue(self.rule.is_active)
         self.assertEqual(MonthlyAggregate.objects.get().operator, self.buyer)
         self.assertTrue(OpsTask.objects.filter(kind=OpsTask.REFRESH).exists())  # aggregates rebuilt properly
         self.other.refresh_from_db()
@@ -55,6 +56,45 @@ class OperatorAcquiredTests(TestCase):
         self.assertEqual(existing.operator, self.buyer)
         self.a1.refresh_from_db()
         self.assertEqual(self.a1.program, existing)
+
+    def test_every_aircraft_in_the_programs_follows_the_buyer(self):
+        stray = Aircraft.objects.create(tail_number="N7LF", icao_hex="a00007", status=Aircraft.CONFIRMED,
+                                        program=self.sub)  # in the acquired operator's program, no operator
+        named = Program.objects.create(name="Life Flight Network")  # an existing same-named program
+        elsewhere = Operator.objects.create(name="Other Co")
+        old = Aircraft.objects.create(tail_number="N8LF", icao_hex="a00008", status=Aircraft.CONFIRMED,
+                                      program=named, operator=elsewhere)
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        self.client.post(self.url, {"buyer": self.buyer.pk})
+        for a in (stray, old):
+            a.refresh_from_db()
+            self.assertEqual(a.operator, self.buyer, a)
+        # Nothing outside those programs changed.
+        self.assertEqual(list(Aircraft.objects.filter(operator=elsewhere)), [])
+        self.other.refresh_from_db()
+        self.assertEqual(self.other.program, None)
+
+    def test_rule_keeps_its_own_program(self):
+        self.rule.program = self.sub
+        self.rule.save()
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        self.client.post(self.url, {"buyer": self.buyer.pk})
+        self.rule.refresh_from_db()
+        self.assertEqual((self.rule.operator, self.rule.program), (self.buyer, self.sub))
+
+    def test_rule_with_program_sets_it_on_matching_aircraft(self):
+        from tracker.rules import apply_auto_confirm_rules
+        program = Program.objects.create(name="Life Flight Network", operator=self.buyer)
+        AutoConfirmRule.objects.update(operator=self.buyer, program=program)
+        new = Aircraft.objects.create(tail_number="N5LF", icao_hex="a00005", status=Aircraft.DISCOVERED,
+                                      registrant_hint="LIFE FLIGHT NETWORK LLC")
+        has = Aircraft.objects.create(tail_number="N6LF", icao_hex="a00006", status=Aircraft.DISCOVERED,
+                                      registrant_hint="LIFE FLIGHT NETWORK LLC", program=self.sub)
+        apply_auto_confirm_rules()
+        new.refresh_from_db()
+        has.refresh_from_db()
+        self.assertEqual((new.status, new.operator, new.program), (Aircraft.CONFIRMED, self.buyer, program))
+        self.assertEqual(has.program, self.sub)  # a program already set is never overwritten
 
     def test_only_superusers(self):
         admin = User.objects.create_user("boss", password="x", is_staff=True)
