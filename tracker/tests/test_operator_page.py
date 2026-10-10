@@ -101,6 +101,13 @@ class OperatorPageTests(TestCase):
         r = self.client.get(reverse("aircraft_list") + "?operator=none&status=confirmed")
         self.assertNotContains(r, "N55UA")
 
+    def test_aircraft_page_edit_link_for_admins_only(self):
+        url = reverse("aircraft_detail", args=[self.a.pk])
+        edit = f'href="{reverse("admin:tracker_aircraft_change", args=[self.a.pk])}">Edit</a>'
+        self.assertNotContains(self.client.get(url), edit)
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        self.assertContains(self.client.get(url), edit)
+
     def test_login_required_and_404(self):
         self.assertEqual(self.client.get(reverse("operator_detail", args=[999])).status_code, 404)
         self.client.logout()
