@@ -11,6 +11,7 @@ urlpatterns = [
     path("sites/<int:pk>/", views.site_detail, name="site_detail"),
     path("sites/<int:pk>/hangar/", views.set_weather_hangar, name="set_weather_hangar"),
     path("operators/<int:pk>/", views.operator_detail, name="operator_detail"),
+    path("operators/<int:pk>/acquired/", views.operator_acquired, name="operator_acquired"),
     path("programs/<int:pk>/", views.program_detail, name="program_detail"),
     path("missions/", views.missions, name="missions"),
     path("routes/map/", views.route_map, name="route_map"),

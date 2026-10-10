@@ -12,7 +12,7 @@ Operator, program and base boxes suggest as you type; a new operator or program 
   <form method="post" action="{% url 'review_rules' %}" class="filters" style="margin-bottom:6px">{% csrf_token %}
     <input type="hidden" name="rule" value="{{ r.pk }}">
     <span>Registrant contains <strong>{{ r.registrant_contains }}</strong>
-      → {% if r.operator %}{{ r.operator }}{% else %}<span class="badge discovered">no operator yet</span>{% endif %}
+      → {% if r.operator %}{{ r.operator }}{% else %}<span class="badge discovered">no operator yet</span>{% endif %}{% if r.program %} · {{ r.program }}{% endif %}
       <span class="muted">· {{ r.confirmed_count }} confirmed</span></span>
     {% if operators %}<select name="operator" aria-label="Operator for this rule">
       <option value="">{% if r.operator %}Change operator…{% else %}Choose operator…{% endif %}</option>
