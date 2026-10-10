@@ -12,10 +12,12 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
 from django.views.decorators.http import require_POST
 
 from .inference.pipeline import local_day
 from . import places
+from .hangars import based_aircraft, suggest_hangars
 from .models import (
     AutoConfirmRule,
     PlaceSuggestion,
@@ -192,9 +194,75 @@ def site_detail(request, pk):
     rows = []
     for (op_id, name), c in sorted(table.items(), key=lambda kv: (kv[0][0] is None, kv[0][1])):
         rows.append((op_id, name, operator_link(request, op_id, site), [c[m] for m in months], sum(c.values())))
+    n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
-        "site": site, "months": months, "rows": rows,
+        "site": site, "months": months, "rows": rows, "n_based": n_based,
+        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based else [],
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
+    })
+
+
+def route_map_url(request, origin, destination, label, **scope):
+    """Map of the scene / unknown landings on a route whose origin or destination is not a known site."""
+    params = {"origin": getattr(origin, "pk", None) or "none", "dest": getattr(destination, "pk", None) or "none",
+              "label": label, **{k: v if v is not None else "none" for k, v in scope.items()}}
+    if _confirmed_only(request):
+        params["confirmed"] = 1
+    return reverse("route_map") + "?" + urlencode(params)
+
+
+def _route_rows(request, flows, limit=15, **scope):
+    """Busiest routes as ((origin, destination, label name), count, map link when an end is a scene/unknown)."""
+    names = dict(Mission.LABELS)
+    return [((o, d, names[label]), n, route_map_url(request, o, d, label, **scope) if o is None or d is None else None)
+            for (o, d, label), n in flows.most_common(limit)]
+
+
+def route_map(request):
+    get = request.GET
+    qs = Mission.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request))
+    for param, field in (("origin", "origin_site"), ("dest", "destination_site"), ("operator", "aircraft__operator"),
+                         ("program", "aircraft__program")):
+        value = get.get(param, "")
+        if value == "none":
+            qs = qs.filter(**{f"{field}__isnull": True})
+        elif value.isdigit():
+            qs = qs.filter(**{f"{field}_id": value})
+    if get.get("label") in dict(Mission.LABELS):
+        qs = qs.filter(label=get["label"])
+    if get.get("base") == "none":
+        qs = qs.filter(aircraft__base__isnull=True, aircraft__inferred_base__isnull=True)
+    elif get.get("base", "").isdigit():
+        qs = qs.filter(Q(aircraft__base_id=get["base"]) | Q(aircraft__base__isnull=True,
+                                                             aircraft__inferred_base_id=get["base"]))
+    month = get.get("month", "")
+    missions = {m.pk: m for m in qs.select_related("aircraft")
+                if not month or local_day(m.start_ts).strftime("%Y-%m") == month}
+    # Each mission's landings away from known sites. A complete mission's last leg is the flight home, so it is
+    # left out; where the signal was lost, the point is where the aircraft was last seen.
+    legs = defaultdict(list)
+    for leg in Leg.objects.filter(mission_id__in=list(missions)).order_by("mission_id", "mission_seq").only(
+            "mission_id", "end_site_id", "end_lat", "end_lon", "end_state", "end_ts"):
+        legs[leg.mission_id].append(leg)
+    points = []
+    for mid, mlegs in legs.items():
+        m = missions[mid]
+        for leg in mlegs if m.rule_fired.startswith("incomplete") else mlegs[:-1]:
+            if leg.end_site_id is None:
+                points.append({"lat": round(leg.end_lat, 5), "lon": round(leg.end_lon, 5),
+                               "lost": leg.end_state == Leg.LOST, "day": local_day(leg.end_ts).isoformat(),
+                               "tail": m.aircraft.tail_number,
+                               "url": reverse("aircraft_detail", args=[m.aircraft_id])})
+
+    def pick(model, key):
+        return model.objects.filter(pk=get[key]).first() if get.get(key, "").isdigit() else None
+
+    scope = [pick(Operator, "operator"), pick(Program, "program"), pick(Site, "base")]
+    return render(request, "tracker/route_map.html", {
+        "points": points[:3000], "n_points": len(points), "n_missions": len(missions),
+        "origin": pick(Site, "origin"), "destination": pick(Site, "dest"),
+        "label": dict(Mission.LABELS).get(get.get("label"), "Any type"), "scope": [s for s in scope if s],
+        "month": month, "confirmed_only": _confirmed_only(request),
     })
 
 
@@ -204,13 +272,12 @@ def program_detail(request, pk):
                 .select_related("operator", "base", "inferred_base").order_by("tail_number"))
     missions = Mission.objects.filter(source=SOURCE, aircraft__program=program, aircraft__status__in=_statuses(request))
     labels = [code for code, _ in Mission.LABELS]
-    label_names = dict(Mission.LABELS)
     per_month = defaultdict(Counter)
     flows = Counter()
     for m in missions.select_related("origin_site", "destination_site"):
         per_month[local_day(m.start_ts).replace(day=1)][m.label] += 1
         if m.origin_site_id or m.destination_site_id:
-            flows[(m.origin_site, m.destination_site, label_names[m.label])] += 1
+            flows[(m.origin_site, m.destination_site, m.label)] += 1
     months = sorted(per_month, reverse=True)
     return render(request, "tracker/program_detail.html", {
         "program": program,
@@ -218,9 +285,27 @@ def program_detail(request, pk):
         "labels": Mission.LABELS,
         "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
         "total": sum(sum(c.values()) for c in per_month.values()),
-        "flows": flows.most_common(15),
+        "flows": _route_rows(request, flows, program=program.pk),
         "confirmed_only": _confirmed_only(request),
     })
+
+
+@require_POST
+@admin_required
+def set_weather_hangar(request, pk):
+    site = get_object_or_404(Site, pk=pk)
+    hangar = get_object_or_404(Site, pk=request.POST["hangar"]) if request.POST.get("hangar") else None
+    if hangar and hangar.pk == site.pk:
+        messages.error(request, "A base cannot be its own weather hangar.")
+    else:
+        site.weather_hangar = hangar
+        site.save(update_fields=["weather_hangar", "updated"])
+        _log(request.user, site, f"Weather hangar set to {hangar or 'none'}")
+        messages.success(request, format_html(
+            "Weather hangar {}. Missions change after the next rebuild. "
+            '<a class="button" href="{}">Queue rebuild</a>',
+            f"set to {hangar.name}" if hangar else "cleared", reverse("queue_rebuild")))
+    return redirect("site_detail", pk=site.pk)
 
 
 def operator_detail(request, pk):
@@ -237,14 +322,13 @@ def operator_detail(request, pk):
     aggs = MonthlyAggregate.objects.filter(source=SOURCE, operator=operator,
                                            includes_unreviewed=not _confirmed_only(request))
     labels = [code for code, _ in Mission.LABELS]
-    label_names = dict(Mission.LABELS)
     per_month = defaultdict(Counter)
     flows, bases = Counter(), Counter()
     base_names = {}
     for a in aggs.select_related("origin_site", "destination_site", "base"):
         per_month[a.month][a.label] += a.count
         if a.origin_site_id or a.destination_site_id:
-            flows[(a.origin_site, a.destination_site, label_names[a.label])] += a.count
+            flows[(a.origin_site, a.destination_site, a.label)] += a.count
         if a.base_id:
             bases[a.base_id] += a.count
             base_names[a.base_id] = a.base.name
@@ -255,7 +339,7 @@ def operator_detail(request, pk):
         "labels": Mission.LABELS,
         "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
         "total": sum(sum(c.values()) for c in per_month.values()),
-        "flows": flows.most_common(15),
+        "flows": _route_rows(request, flows, operator=operator.pk),
         "bases": [(pk, base_names[pk], n) for pk, n in bases.most_common()],
         "program_groups": program_groups if named else [],
         "confirmed_only": _confirmed_only(request),

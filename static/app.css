@@ -73,3 +73,11 @@ tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
 /* Operator page: aircraft grouped by program */
 h3.program-group { font-size: 15px; margin: 16px 0 6px; }
 h3.program-group:first-of-type { margin-top: 4px; }
+
+/* Route map */
+a.map-link { white-space: nowrap; }
+.legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px 0 10px; vertical-align: -1px; }
+.legend .dot:first-child { margin-left: 0; }
+.legend .dot.landed { background: #3b82f6; border: 1.5px solid #1d4ed8; }
+.legend .dot.lost { background: #f2b84b; border: 1.5px dashed #8a5a00; }
+.legend .dot.dest { background: #b3261e; }

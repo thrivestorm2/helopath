@@ -6,6 +6,26 @@
   {% if site.reviewed %}reviewed{% else %}not yet reviewed{% endif %}{% if not site.is_active %} · <strong>inactive</strong>{% endif %}
   {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+{% if n_based or site.weather_hangar %}
+<div class="card" id="hangar">
+  <h2 style="margin-top:0">Bad-weather hangar</h2>
+  <p>{% if site.weather_hangar %}The {{ n_based }} aircraft based here shelter at
+    <a href="{% url 'site_detail' site.weather_hangar_id %}">{{ site.weather_hangar.name }}</a>. Flights to and from it
+    count like flights from the base.
+  {% else %}No weather hangar set for the {{ n_based }} aircraft based here.{% endif %}</p>
+  {% if is_admin and site.weather_hangar %}<form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<button>Clear weather hangar</button></form>{% endif %}
+  {% if hangar_suggestions %}
+  <p class="muted">Airports where these aircraft started the day instead of here:</p>
+  <table class="stack"><tr class="head"><th>Airport</th><th class="n">Days started there</th><th class="n">Aircraft</th>{% if is_admin %}<th></th>{% endif %}</tr>
+  {% for s, days, n in hangar_suggestions %}
+  <tr><td class="lead"><a href="{% url 'site_detail' s.pk %}">{{ s.name }}</a>{% if s.faa_id %} <span class="muted">{{ s.faa_id }}</span>{% endif %}</td>
+    <td class="n" data-label="Days started there">{{ days }}</td><td class="n" data-label="Aircraft">{{ n }}</td>
+    {% if is_admin %}<td>{% if s.pk == site.weather_hangar_id %}<span class="badge confirmed">Current</span>{% else %}
+      <form method="post" action="{% url 'set_weather_hangar' site.pk %}">{% csrf_token %}<input type="hidden" name="hangar" value="{{ s.pk }}"><button>Use as weather hangar</button></form>{% endif %}</td>{% endif %}</tr>
+  {% endfor %}</table>
+  {% elif not site.weather_hangar %}<p class="muted">No airport stands out yet as an overnight spot for them.{% if is_admin %} You can set one on the <a href="{% url 'admin:tracker_site_change' site.pk %}">Edit</a> page.{% endif %}</p>{% endif %}
+</div>
+{% endif %}
 <h2>Arrivals by operator and month ({{ total }} total)</h2>
 <div class="scroll"><table>
 <tr><th>Operator</th>{% for m in months %}<th class="n">{{ m }}</th>{% endfor %}<th class="n">Total</th></tr>
