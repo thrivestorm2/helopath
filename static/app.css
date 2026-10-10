@@ -34,3 +34,35 @@ button.primary { background:var(--fg); color:#fff; border-color:var(--fg); } but
 .pager { margin:10px 0; display:flex; gap:10px; align-items:center; }
 .review { display:grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 2fr) minmax(240px, 1fr); gap:16px; }
 @media (max-width: 800px) { .review { grid-template-columns:1fr; } }
+
+/* Rows that lead somewhere: tap anywhere in the row (see base.html). */
+tr[data-href] { cursor: pointer; }
+tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
+.nowrap { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  /* One swipeable menu row instead of four wrapped lines. */
+  header { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 0 16px; }
+  header .spacer { flex: 0 0 8px; }
+  main { padding: 12px; }
+  h1 { font-size: 20px; }
+  th, td { padding: 10px 8px; }
+
+  /* List tables become stacked cards: main item on top, "Label … value" lines below. */
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr.head { display: flex; flex-wrap: wrap; gap: 2px 14px; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  table.stack tr.head th { display: inline; border: 0; padding: 2px 0; }
+  table.stack tr.head:not(:has(a)) { display: none; }  /* keep the header only where it holds sort links */
+  table.stack tr:not(.head) { border-bottom: 1px solid var(--line); padding: 10px 8px; }
+  table.stack td { border: 0; padding: 3px 0; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; text-align: right; }
+  table.stack td::before { content: attr(data-label); color: var(--muted); font-size: 12px; text-transform: uppercase;
+                           letter-spacing: .03em; text-align: left; flex: none; }
+  table.stack td.lead { font-size: 16px; font-weight: 600; text-align: left; justify-content: flex-start; }
+  table.stack td.lead::before { content: none; }
+  table.stack td:empty, table.stack td.arrow { display: none; }
+  table.stack td.empty-row { text-align: left; }
+  table.stack td.empty-row::before { content: none; }
+}
+/* On phones a card's lead line carries values that have their own column on wider screens. */
+.mobile-only { display: none; }
+@media (max-width: 640px) { .mobile-only { display: inline; } table.stack td.desktop-only { display: none; } }

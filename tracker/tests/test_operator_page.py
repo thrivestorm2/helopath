@@ -55,6 +55,14 @@ class OperatorPageTests(TestCase):
         self.assertContains(detail, f'href="{url}"')
         self.assertContains(detail, f'href="{reverse("site_detail", args=[self.base.pk])}"')
 
+    def test_rows_are_tappable(self):
+        op_url = reverse("operator_detail", args=[self.op.pk])
+        self.assertContains(self.client.get(reverse("dashboard")), f'<tr data-href="{op_url}">')
+        self.assertContains(self.client.get(reverse("aircraft_list")),
+                            f'<tr data-href="{reverse("aircraft_detail", args=[self.a.pk])}">')
+        self.assertContains(self.client.get(op_url), f'<tr data-href="{reverse("site_detail", args=[self.base.pk])}">')
+        self.assertContains(self.client.get(reverse("dashboard")), "closest('tr[data-href]')")  # the tap handler
+
     def test_login_required_and_404(self):
         self.assertEqual(self.client.get(reverse("operator_detail", args=[999])).status_code, 404)
         self.client.logout()

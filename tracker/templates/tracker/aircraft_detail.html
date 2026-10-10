@@ -28,17 +28,18 @@
 <div id="map" class="card" style="padding:0"></div>
 <h2>Legs</h2>
 <p class="muted">Flight-level tracks are viewable here only; they cannot be exported.</p>
-<div class="scroll"><table>
-<tr><th>Start</th><th>End</th><th>From</th><th>To</th><th>End state</th><th class="n">Confidence</th><th>Mission</th><th></th></tr>
+<p class="muted">Tap a leg to show it on the map.</p>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Start</th><th>End</th><th>From</th><th>To</th><th>End state</th><th class="n">Confidence</th><th>Mission</th><th></th></tr>
 {% for leg in page %}
-<tr>
-  <td>{{ leg.start_ts|date:"Y-m-d H:i" }}</td><td>{{ leg.end_ts|date:"H:i" }}</td>
-  <td>{{ leg.start_site.name|default:"—" }}</td><td>{{ leg.end_site.name|default:"—" }}</td>
-  <td>{{ leg.get_end_state_display }}{% if leg.gaps_bridged %} <span class="muted" title="Signal was lost and regained mid-flight; the pieces were joined">· {{ leg.gaps_bridged }} gap{{ leg.gaps_bridged|pluralize }} rejoined</span>{% endif %}</td><td class="n">{{ leg.confidence|floatformat:2 }}</td>
-  <td>{% if leg.mission %}{{ leg.mission.get_label_display }}{% endif %}</td>
-  <td><button type="button" onclick="showLeg({{ leg.pk }})">Map</button></td>
+<tr data-leg="{{ leg.pk }}" style="cursor:pointer">
+  <td class="lead nowrap">{{ leg.start_ts|date:"Y-m-d H:i" }}<span class="mobile-only">–{{ leg.end_ts|date:"H:i" }}</span></td><td class="desktop-only">{{ leg.end_ts|date:"H:i" }}</td>
+  <td data-label="From">{{ leg.start_site.name|default:"—" }}</td><td data-label="To">{{ leg.end_site.name|default:"—" }}</td>
+  <td data-label="End state">{{ leg.get_end_state_display }}{% if leg.gaps_bridged %} <span class="muted" title="Signal was lost and regained mid-flight; the pieces were joined">· {{ leg.gaps_bridged }} gap{{ leg.gaps_bridged|pluralize }} rejoined</span>{% endif %}</td><td class="n" data-label="Confidence">{{ leg.confidence|floatformat:2 }}</td>
+  <td data-label="Mission">{% if leg.mission %}{{ leg.mission.get_label_display }}{% endif %}</td>
+  <td class="desktop-only"><button type="button" onclick="showLeg({{ leg.pk }})">Map</button></td>
 </tr>
-{% empty %}<tr><td colspan="8" class="muted">No legs.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="8" class="muted empty-row">No legs.</td></tr>{% endfor %}
 </table></div>
 {% include "tracker/_pager.html" %}
 {{ tracks|json_script:"tracks" }}
@@ -53,6 +54,10 @@ const layers = {};
 const all = L.featureGroup().addTo(map);
 tracks.forEach(t => { if (t.pts.length) { layers[t.id] = L.polyline(t.pts, {color: colors[t.state], weight: 2}).addTo(all); } });
 if (all.getLayers().length) map.fitBounds(all.getBounds()); else map.setView([40, -89.4], 6);
+document.addEventListener('click', e => {
+  const row = e.target.closest('tr[data-leg]');
+  if (row && !e.target.closest('a, button')) showLeg(Number(row.dataset.leg));
+});
 function showLeg(id) { const l = layers[id]; if (l) { map.fitBounds(l.getBounds()); l.setStyle({weight: 5}); setTimeout(() => l.setStyle({weight: 2}), 2000); window.scrollTo(0, document.getElementById('map').offsetTop - 20); } }
 </script>
 {% endblock %}

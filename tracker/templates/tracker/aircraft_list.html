@@ -10,7 +10,8 @@
   <input type="hidden" name="sort" value="{{ sort }}">
 </form>
 <div id="results">
-<div class="scroll"><table>
+<div class="scroll"><table class="stack">
+<tr class="head">
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'tail_number' %}-{% endif %}tail_number">Tail</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'icao_hex' %}-{% endif %}icao_hex">Hex</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'make_model' %}-{% endif %}make_model">Make / model</a></th>
@@ -22,18 +23,18 @@
   <th><a href="?{{ filter_qs }}&sort={% if sort == '-last_seen' %}{% else %}-{% endif %}last_seen">Last seen</a></th>
 </tr>
 {% for a in page %}
-<tr>
-  <td><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td>
-  <td><code>{{ a.icao_hex }}</code></td>
-  <td>{{ a.make_model }}</td>
-  <td><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td>
-  <td>{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
-  <td>{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% elif a.inferred_base_lat %}<span class="muted">unmatched location</span> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
-  <td class="n">{{ a.qualifying_visits }}</td>
-  <td>{{ a.first_seen|date:"Y-m-d" }}</td>
-  <td>{{ a.last_seen|date:"Y-m-d" }}</td>
+<tr data-href="{% url 'aircraft_detail' a.pk %}">
+  <td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td>
+  <td data-label="Hex"><code>{{ a.icao_hex }}</code></td>
+  <td data-label="Make / model">{{ a.make_model }}</td>
+  <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td>
+  <td data-label="Operator">{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
+  <td data-label="Base">{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% elif a.inferred_base_lat %}<span class="muted">unmatched location</span> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
+  <td class="n" data-label="Qualifying visits">{{ a.qualifying_visits }}</td>
+  <td class="nowrap" data-label="First seen">{{ a.first_seen|date:"Y-m-d" }}</td>
+  <td class="nowrap" data-label="Last seen">{{ a.last_seen|date:"Y-m-d" }}</td>
 </tr>
-{% empty %}<tr><td colspan="9" class="muted">No discovered or confirmed aircraft yet.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="9" class="muted empty-row">No discovered or confirmed aircraft yet.</td></tr>{% endfor %}
 </table></div>
 {% include "tracker/_pager.html" %}
 </div>
