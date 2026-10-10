@@ -95,17 +95,20 @@ def dashboard(request):
     months = sorted(set(legs_by_month) | set(missions_by_month))
     aggs = MonthlyAggregate.objects.filter(source=SOURCE, includes_unreviewed=not _confirmed_only(request))
     by_operator = defaultdict(int)  # (pk, name) -> missions; pk None means unassigned
-    by_base = defaultdict(int)
-    for a in aggs.select_related("operator", "base"):
+    for a in aggs.select_related("operator"):
         by_operator[(a.operator_id, a.operator.name if a.operator else "(unassigned)")] += a.count
-        by_base[(a.base_id, a.base.name if a.base else "(no base)")] += a.count
+    # Hospitals receiving the most inferred patients (from scenes and from other hospitals).
+    top_receiving = (aggs.filter(label__in=PATIENT_IN, destination_site__site_type=Site.HOSPITAL)
+                     .values("destination_site", "destination_site__name")
+                     .annotate(n=Sum("count"), scenes=Sum("count", filter=Q(label="scene")))
+                     .order_by("-n", "destination_site__name")[:10])
     ok_runs = IngestRun.objects.filter(source=SOURCE, status=IngestRun.OK)
     return render(request, "tracker/dashboard.html", {
         "rate": rate, "resolved": resolved, "total": total,
         "months": [(m, legs_by_month[m], missions_by_month[m]) for m in months],
         "by_operator": [(pk, name, n, operator_link(request, pk))
                         for (pk, name), n in sorted(by_operator.items(), key=lambda kv: -kv[1])],
-        "by_base": [(pk, name, n) for (pk, name), n in sorted(by_base.items(), key=lambda kv: -kv[1])],
+        "top_receiving": top_receiving,
         "aircraft_by_status": dict(Aircraft.objects.values_list("status").annotate(n=Count("id"))),
         "days_ingested": ok_runs.values("day").distinct().count(),
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
