@@ -11,6 +11,10 @@
     <tr><th>Operator</th><td>{% if aircraft.operator %}<a href="{% url 'operator_detail' aircraft.operator_id %}">{{ aircraft.operator }}</a>{% else %}—{% endif %}</td></tr>
     <tr><th>Program</th><td>{% if aircraft.program %}<a href="{% url 'program_detail' aircraft.program_id %}">{{ aircraft.program }}</a>{% else %}—{% endif %}</td></tr>
     <tr><th>Base</th><td>{% if aircraft.base %}<a href="{% url 'site_detail' aircraft.base_id %}">{{ aircraft.base }}</a>{% elif aircraft.inferred_base %}<a href="{% url 'site_detail' aircraft.inferred_base_id %}">{{ aircraft.inferred_base }}</a> <em class="inferred">inferred</em>{% else %}—{% endif %}</td></tr>
+    <tr><th>Weather hangar</th><td>{% if hangar %}<a href="{% url 'site_detail' hangar.pk %}">{{ hangar.name }}</a>
+      {% if hangar_days %}<span class="badge discovered" title="Not confirmed: the base's aircraft started the day here {{ hangar_days }} times">suggested, not confirmed</span>
+      {% if is_admin %}<a href="{% url 'site_detail' base.pk %}#hangar">Confirm on base page</a>{% endif %}{% endif %}
+      {% else %}—{% endif %}</td></tr>
     <tr><th>Origin</th><td>{{ aircraft.get_origin_display }}</td></tr>
   </table>
 </div>
