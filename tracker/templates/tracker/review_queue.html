@@ -36,7 +36,7 @@ Operator, program and base boxes suggest as you type; a new operator or program 
 {% for a in page %}
 <div class="card review" id="a{{ a.pk }}">
   <div>
-    <h2 style="margin-top:0"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></h2>
+    <h2 style="margin-top:0"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a></h2>
     <div><code>{{ a.icao_hex }}</code> · {{ a.make_model|default:"unknown type" }}</div>
     <div class="muted">Discovered {{ a.discovered_at|date:"Y-m-d" }}</div>
     <div class="muted">Seen {{ a.first_seen|date:"Y-m-d" }} – {{ a.last_seen|date:"Y-m-d" }}</div>

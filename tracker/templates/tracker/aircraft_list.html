@@ -3,7 +3,7 @@
 <h1>Aircraft</h1>
 <form class="filters" method="get" hx-get="{% url 'aircraft_list' %}" hx-target="#results" hx-select="#results"
       hx-trigger="input changed delay:300ms from:input[name=q], change" hx-push-url="true">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Tail, hex, make/model">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Call sign, tail, hex, make/model">
   <select name="status"><option value="">Any status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="operator"><option value="">Any operator</option><option value="none" {% if request.GET.operator == "none" %}selected{% endif %}>Unassigned</option>{% for o in operators %}<option value="{{ o.pk }}" {% if request.GET.operator == o.pk|stringformat:"s" %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
   <select name="program"><option value="">Any program</option><option value="none" {% if request.GET.program == "none" %}selected{% endif %}>No program</option>{% for p in programs %}<option value="{{ p.pk }}" {% if request.GET.program == p.pk|stringformat:"s" %}selected{% endif %}>{{ p }}</option>{% endfor %}</select>
@@ -15,7 +15,7 @@
 <div id="results">
 <div class="scroll"><table class="stack">
 <tr class="head">
-  <th><a href="?{{ filter_qs }}&sort={% if sort == 'tail_number' %}-{% endif %}tail_number">Tail</a></th>
+  <th><a href="?{{ filter_qs }}&sort={% if sort == 'name' %}-{% endif %}name">Aircraft</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'icao_hex' %}-{% endif %}icao_hex">Hex</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'make_model' %}-{% endif %}make_model">Make / model</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'status' %}-{% endif %}status">Status</a></th>
@@ -28,7 +28,7 @@
 </tr>
 {% for a in page %}
 <tr data-href="{% url 'aircraft_detail' a.pk %}">
-  <td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td>
+  <td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a></td>
   <td data-label="Hex"><code>{{ a.icao_hex }}</code></td>
   <td data-label="Make / model">{{ a.make_model }}</td>
   <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td>

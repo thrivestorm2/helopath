@@ -5,6 +5,8 @@ Aircraft are written by automation; `operator`, `base`, `status` and `notes` bel
 to admins and are never written by discovery or rebuild.
 """
 from django.db import models
+from django.db.models import Value
+from django.db.models.functions import Coalesce, Lower, NullIf
 
 NO_PATIENT_INFO = "Do not record patient information of any kind here."
 
@@ -104,6 +106,10 @@ class Aircraft(models.Model):
     origin = models.CharField(max_length=10, choices=ORIGIN_CHOICES, default="auto")
 
     # Admin-owned.
+    call_sign = models.CharField(
+        max_length=60, blank=True,
+        help_text="Your own name for this aircraft (e.g. Life Flight 3). Lists sort by it and show the tail "
+                  "number in parentheses.")
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL)
     program = models.ForeignKey(Program, null=True, blank=True, on_delete=models.SET_NULL, related_name="aircraft")
     base = models.ForeignKey(Site, null=True, blank=True, on_delete=models.SET_NULL, related_name="based_aircraft")
@@ -135,7 +141,17 @@ class Aircraft(models.Model):
         verbose_name_plural = "aircraft"
 
     def __str__(self):
-        return self.tail_number
+        return self.display_name
+
+    @property
+    def display_name(self):
+        """"Life Flight 3 (N911LF)" when a call sign is set, else the tail number."""
+        return f"{self.call_sign} ({self.tail_number})" if self.call_sign else self.tail_number
+
+    @staticmethod
+    def sort_name():
+        """Order by call sign, or the tail number for aircraft without one (case-insensitive)."""
+        return Lower(Coalesce(NullIf("call_sign", Value("")), "tail_number"))
 
     @property
     def top_hospitals_list(self):

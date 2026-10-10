@@ -157,6 +157,30 @@ class OperatorPageTests(TestCase):
                              {"name": "Air Evac Lifeteam", "parent_company": "GMR", "notes": "", "_save": "Save"})
         self.assertRedirects(r, op_page, fetch_redirect_response=False)
 
+    def test_call_sign_shown_with_tail_and_sorts_lists(self):
+        Aircraft.objects.filter(pk=self.a.pk).update(call_sign="Zulu Flight")
+        b = Aircraft.objects.create(tail_number="N999ZZ", icao_hex="a00999", status=Aircraft.CONFIRMED,
+                                    operator=self.op, call_sign="alpha 1")
+        Aircraft.objects.create(tail_number="N5MM", icao_hex="a00555", status=Aircraft.CONFIRMED, operator=self.op)
+        r = self.client.get(reverse("aircraft_detail", args=[b.pk]))
+        self.assertContains(r, '<h1>alpha 1 <span class="muted">(N999ZZ)</span>')
+        for url in (reverse("aircraft_list"), reverse("operator_detail", args=[self.op.pk])):
+            body = self.client.get(url).content.decode()
+            order = [body.index(s) for s in (">alpha 1 (N999ZZ)<", ">N5MM<", ">Zulu Flight (N412AE)<")]
+            self.assertEqual(order, sorted(order), url)  # by call sign, else tail; case-insensitive
+        body = self.client.get(reverse("aircraft_list") + "?sort=-name").content.decode()
+        self.assertLess(body.index("Zulu Flight"), body.index("alpha 1"))
+        self.assertContains(self.client.get(reverse("aircraft_list") + "?q=zulu"), "Zulu Flight (N412AE)")
+        self.assertEqual(str(b), "alpha 1 (N999ZZ)")
+
+    def test_call_sign_editable_in_admin(self):
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        change = reverse("admin:tracker_aircraft_change", args=[self.a.pk])
+        self.assertContains(self.client.get(change), 'name="call_sign"')
+        self.client.post(change, {"status": "confirmed", "call_sign": "Life Flight 3", "_save": "Save"})
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.call_sign, "Life Flight 3")
+
     def test_login_required_and_404(self):
         self.assertEqual(self.client.get(reverse("operator_detail", args=[999])).status_code, 404)
         self.client.logout()
