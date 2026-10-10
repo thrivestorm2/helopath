@@ -6,7 +6,7 @@ from import_export import fields, resources
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 
-from .models import Aircraft, Operator, Site
+from .models import Aircraft, AutoConfirmRule, Operator, Site
 
 admin.site.site_header = "Air Medical Tracker admin"
 admin.site.site_title = "Air Medical Tracker"
@@ -139,3 +139,15 @@ class LogEntryAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(AutoConfirmRule)
+class AutoConfirmRuleAdmin(admin.ModelAdmin):
+    list_display = ("registrant_contains", "operator", "is_active", "created_by", "created_at")
+    list_filter = ("is_active",)
+    readonly_fields = ("created_by", "created_at")
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)

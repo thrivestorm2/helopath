@@ -3,6 +3,24 @@
 <h1>Review queue <span class="muted" style="font-size:14px">{{ total }} discovered aircraft awaiting a decision</span></h1>
 <p class="muted">Confirm medical helicopters, reject the rest (police, news, tour, training, private). Unsure? Skip it; it stays here.
 Operator and base boxes suggest as you type; a new operator name is added automatically.</p>
+<details class="card" {% if not rules %}open{% endif %}>
+  <summary><strong>Auto-confirm rules</strong> <span class="muted">({{ rules|length }} active)</span></summary>
+  <p class="muted" style="margin:8px 0">Aircraft whose FAA registrant contains this text are confirmed automatically,
+  now and whenever new ones are discovered. Rules never undo a rejection.</p>
+  {% for r in rules %}
+  <form method="post" action="{% url 'review_rules' %}" class="filters" style="margin-bottom:6px">{% csrf_token %}
+    <input type="hidden" name="rule" value="{{ r.pk }}">
+    <span>Registrant contains <strong>{{ r.registrant_contains }}</strong>{% if r.operator %} → operator {{ r.operator }}{% endif %}
+      <span class="muted">· {{ r.confirmed_count }} confirmed</span></span>
+    <button name="action" value="off">Switch off</button>
+  </form>
+  {% endfor %}
+  <form method="post" action="{% url 'review_rules' %}" class="filters" style="margin-top:10px">{% csrf_token %}
+    <input name="registrant_contains" placeholder="Registrant contains, e.g. AIR METHODS" required minlength="4" style="max-width:260px;width:100%">
+    <input name="operator_name" list="operator-options" placeholder="Operator to set (optional)" autocomplete="off" style="max-width:220px;width:100%">
+    <button class="primary" name="action" value="add">Add rule</button>
+  </form>
+</details>
 {% include "tracker/_pager.html" %}
 {% for a in page %}
 <div class="card review" id="a{{ a.pk }}">
