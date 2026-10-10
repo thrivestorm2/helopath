@@ -39,6 +39,16 @@ class Program(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.operators_filled = self.fill_aircraft_operators()
+
+    def fill_aircraft_operators(self):
+        """Aircraft in this program with no operator get the program's operator. Returns how many changed."""
+        if not self.operator_id:
+            return 0
+        return self.aircraft.filter(operator__isnull=True).update(operator_id=self.operator_id)
+
 
 class Site(models.Model):
     HOSPITAL = "hospital_helipad"
@@ -145,6 +155,21 @@ class Aircraft(models.Model):
 
     def __str__(self):
         return self.display_name
+
+    def save(self, *args, **kwargs):
+        if self.fill_operator_from_program() and kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = {*kwargs["update_fields"], "operator"}
+        super().save(*args, **kwargs)
+
+    def fill_operator_from_program(self):
+        """No operator yet, but the program has one: use it. Never replaces an operator already set."""
+        if self.operator_id or not self.program_id:
+            return False
+        operator_id = Program.objects.filter(pk=self.program_id).values_list("operator_id", flat=True).first()
+        if operator_id:
+            self.operator_id = operator_id
+            return True
+        return False
 
     @property
     def display_name(self):
