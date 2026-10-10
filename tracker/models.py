@@ -61,7 +61,8 @@ class Site(models.Model):
     weather_hangar = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="hangar_for",
         help_text="For a base: where its aircraft shelter in bad weather (usually an airport). Aircraft based here "
-                  "treat it as a second home, so flights from and to it are not lost.")
+                  "treat it as a second home, so flights from and to it are not lost. Choose the base itself when "
+                  "its aircraft are hangared there.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)

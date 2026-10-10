@@ -69,6 +69,14 @@ class WeatherHangarMissionTests(TestCase):
             ("reposition", "Airport KPIA", "Base One", "hangar>base"),
         ])
 
+    def test_hangar_at_the_base_itself_changes_nothing(self):
+        self.base.weather_hangar = self.base
+        self.base.save()
+        pipeline.build_missions("adsblol")
+        labels = [m[0] for m in missions()]
+        self.assertNotIn("scene", labels)  # same as no hangar: the airport trip is not a home
+        self.assertIn("unknown", labels)
+
     def test_inferred_base_ignores_the_hangar(self):
         Aircraft.objects.filter(pk=self.a.pk).update(base=None)
         legs = LegFactory(self.a)
@@ -156,9 +164,13 @@ class SiteHangarPageTests(TestCase):
         self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": ""})
         self.base.refresh_from_db()
         self.assertIsNone(self.base.weather_hangar)
-        self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": self.base.pk})
+        r = self.client.post(reverse("set_weather_hangar", args=[self.base.pk]), {"hangar": self.base.pk}, follow=True)
         self.base.refresh_from_db()
-        self.assertIsNone(self.base.weather_hangar)  # never its own hangar
+        self.assertEqual(self.base.weather_hangar, self.base)  # hangared at the base itself
+        self.assertContains(r, "Weather hangar set to the base itself")
+        self.assertContains(r, "is hangared at the base itself")
+        self.assertNotContains(r, "Use as weather hangar")  # no suggestions once settled
+        self.assertNotContains(r, "Hangar is at this base</button>")
 
     def test_viewers_see_but_cannot_set(self):
         self.client.force_login(self.viewer)
@@ -182,6 +194,12 @@ class SiteHangarPageTests(TestCase):
         self.base.save()
         r = self.client.get(url)
         self.assertContains(r, ">Airport KPIA</a>")
+        self.assertNotContains(r, "suggested, not confirmed")
+        # Hangared at the base itself.
+        self.base.weather_hangar = self.base
+        self.base.save()
+        r = self.client.get(url)
+        self.assertContains(r, "At base")
         self.assertNotContains(r, "suggested, not confirmed")
         # No base, no hangar.
         Aircraft.objects.filter(pk=self.a.pk).update(base=None)
