@@ -118,6 +118,10 @@ class Aircraft(models.Model):
         return self.tail_number
 
     @property
+    def top_hospitals_list(self):
+        return [h for h in self.top_hospitals_hint.split("; ") if h]
+
+    @property
     def effective_base(self):
         return self.base or self.inferred_base
 
