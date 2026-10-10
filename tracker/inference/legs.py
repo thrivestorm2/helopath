@@ -5,7 +5,7 @@ from typing import Iterable, Optional
 
 from django.conf import settings
 
-from ..geo import SiteIndex, haversine_m
+from ..geo import SiteIndex, angle_diff_deg, bearing_deg, haversine_m
 from ..models import Leg
 
 
@@ -15,6 +15,7 @@ class RawLeg:
     points: list                 # TracePoints, airborne points plus the touchdown/lift-off ground points
     ended_on_ground: bool
     started_on_ground: bool
+    gaps_bridged: int = 0        # coverage gaps rejoined by stitch()
 
 
 @dataclass
@@ -32,6 +33,7 @@ class LegResult:
     end_alt_ft: Optional[float]
     confidence: float
     start_on_ground: bool = False
+    gaps_bridged: int = 0
     simplified_track: list = field(default_factory=list)
     callsigns: set = field(default_factory=set)
 
@@ -76,6 +78,82 @@ def segment(points: Iterable) -> list[RawLeg]:
         prev = p
     close(False)
     return legs
+
+
+KT_PER_MPS = 1.943844
+
+
+def _motion(pts, at_start):
+    """(median ground speed in kt, track in degrees) over a short run of airborne points, or Nones.
+    Track is the reported one nearest the join (first point of a leg start, last of a leg end)
+    when available, else the bearing travelled across the run."""
+    speeds = sorted(p.gs_kt for p in pts if p.gs_kt is not None)
+    gs = speeds[len(speeds) // 2] if speeds else None
+    tracks = [p.track_deg for p in pts if p.track_deg is not None]
+    if tracks:
+        track = tracks[0] if at_start else tracks[-1]
+    elif len(pts) >= 2 and haversine_m(pts[0].lat, pts[0].lon, pts[-1].lat, pts[-1].lon) > 200:
+        track = bearing_deg(pts[0].lat, pts[0].lon, pts[-1].lat, pts[-1].lon)
+    else:
+        track = None
+    return gs, track
+
+
+def _end_window(leg, at_start):
+    air = [p for p in leg.points if not p.on_ground]
+    window = settings.STITCH_ENDPOINT_WINDOW_S
+    if at_start:
+        t0 = air[0].ts_utc
+        return [p for p in air if (p.ts_utc - t0).total_seconds() <= window]
+    t1 = air[-1].ts_utc
+    return [p for p in air if (t1 - p.ts_utc).total_seconds() <= window]
+
+
+def continues(a: RawLeg, b: RawLeg) -> bool:
+    """Is leg b the same flight as leg a, picked up again after a coverage gap?
+
+    Both pieces must be airborne at the join, the aircraft must be cruising at both ends, the gap
+    short, and the jump across it consistent with the heading and speed flown on either side.
+    """
+    if a.ended_on_ground or b.started_on_ground:
+        return False
+    end_a, start_b = _end_window(a, at_start=False), _end_window(b, at_start=True)
+    if not end_a or not start_b:
+        return False
+    pa, pb = end_a[-1], start_b[0]
+    gap_s = (pb.ts_utc - pa.ts_utc).total_seconds()
+    if gap_s <= 0 or gap_s > settings.STITCH_MAX_GAP_MINUTES * 60:
+        return False
+    gs_a, trk_a = _motion(end_a, at_start=False)
+    gs_b, trk_b = _motion(start_b, at_start=True)
+    if None in (gs_a, gs_b, trk_a, trk_b) or min(gs_a, gs_b) < settings.STITCH_MIN_GS_KT:
+        return False
+    dist_m = haversine_m(pa.lat, pa.lon, pb.lat, pb.lon)
+    implied_kt = dist_m / gap_s * KT_PER_MPS
+    cruise_kt = (gs_a + gs_b) / 2
+    if not (settings.STITCH_SPEED_MIN_RATIO * cruise_kt <= implied_kt <= settings.STITCH_SPEED_MAX_RATIO * cruise_kt):
+        return False
+    limit = settings.STITCH_MAX_HEADING_DIFF_DEG
+    if angle_diff_deg(trk_a, trk_b) > limit:
+        return False
+    if dist_m >= 300:  # the jump's own direction is only meaningful over some distance
+        jump = bearing_deg(pa.lat, pa.lon, pb.lat, pb.lon)
+        if angle_diff_deg(jump, trk_a) > limit or angle_diff_deg(jump, trk_b) > limit:
+            return False
+    return True
+
+
+def stitch(legs: list[RawLeg]) -> list[RawLeg]:
+    """Rejoin consecutive legs that are one flight split by a coverage gap (see continues())."""
+    out: list[RawLeg] = []
+    for leg in legs:
+        if out and continues(out[-1], leg):
+            prev = out[-1]
+            out[-1] = RawLeg(prev.hex, prev.points + leg.points, leg.ended_on_ground, prev.started_on_ground,
+                             prev.gaps_bridged + leg.gaps_bridged + 1)
+        else:
+            out.append(leg)
+    return out
 
 
 def simplify(points, max_points):
@@ -204,13 +282,14 @@ def classify(raw: RawLeg, index: SiteIndex) -> LegResult:
         end_alt_ft=end_alt,
         confidence=round(max(0.0, min(1.0, conf)), 3),
         start_on_ground=first.on_ground,
+        gaps_bridged=raw.gaps_bridged,
         simplified_track=simplify(pts, settings.LEG_TRACK_MAX_POINTS),
         callsigns={p.callsign for p in pts if p.callsign},
     )
 
 
 def infer_legs(points, index: SiteIndex) -> list[LegResult]:
-    return [classify(r, index) for r in segment(points)]
+    return [classify(r, index) for r in stitch(segment(points))]
 
 
 def is_qualifying_visit(leg) -> bool:

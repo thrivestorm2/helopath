@@ -27,6 +27,17 @@ LEG_MIN_AIRBORNE_POINTS = _env("LEG_MIN_AIRBORNE_POINTS", 3)
 LEG_MIN_DURATION_S = _env("LEG_MIN_DURATION_S", 60.0)
 LEG_TRACK_MAX_POINTS = _env("LEG_TRACK_MAX_POINTS", 200)
 
+# Leg stitching: rejoin one flight that coverage split into two airborne legs. The pieces are
+# joined only when the aircraft was cruising at both ends, the gap is short, and the jump across
+# the gap matches both the heading and the speed it was flying (a slow "implied speed" means it
+# probably stopped or landed unseen, so those stay separate).
+STITCH_MAX_GAP_MINUTES = _env("STITCH_MAX_GAP_MINUTES", 30.0)
+STITCH_MIN_GS_KT = _env("STITCH_MIN_GS_KT", 40.0)
+STITCH_MAX_HEADING_DIFF_DEG = _env("STITCH_MAX_HEADING_DIFF_DEG", 45.0)
+STITCH_SPEED_MIN_RATIO = _env("STITCH_SPEED_MIN_RATIO", 0.7)
+STITCH_SPEED_MAX_RATIO = _env("STITCH_SPEED_MAX_RATIO", 1.3)
+STITCH_ENDPOINT_WINDOW_S = _env("STITCH_ENDPOINT_WINDOW_S", 90.0)
+
 # Leg end state.
 SITE_DEFAULT_RADIUS_M = _env("SITE_DEFAULT_RADIUS_M", 300)
 LANDED_MAX_AGL_FT = _env("LANDED_MAX_AGL_FT", 200.0)
@@ -76,3 +87,8 @@ PRIMARY_SOURCE = "adsblol"
 # Background worker: when the daily ingest runs (UTC). adsb.lol publishes a day during the following day.
 NIGHTLY_UTC_HOUR = _env("NIGHTLY_UTC_HOUR", 18)
 NIGHTLY_UTC_MINUTE = _env("NIGHTLY_UTC_MINUTE", 30)
+
+# Landing-cluster name suggestions from OpenStreetMap (tracker/places.py).
+PLACE_LOOKUP_MIN_LANDINGS = _env("PLACE_LOOKUP_MIN_LANDINGS", 20)   # clusters with MORE landings than this
+PLACE_LOOKUP_RADIUS_M = _env("PLACE_LOOKUP_RADIUS_M", 500)
+PLACE_LOOKUPS_PER_TICK = _env("PLACE_LOOKUPS_PER_TICK", 5)          # per worker tick (~30 s): polite to Overpass

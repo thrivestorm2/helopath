@@ -110,6 +110,16 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   site's elevation) within 1 km of a site, the leg is `landing_inferred` at that site, confidence 0.85 minus
   up to 0.2 for distance and 0.2 if another site is within 1 km. Speed and altitude are the most recent values
   in the last 60 s. Thresholds: `LOW_SLOW_*` in `tracker/thresholds.py`.
+- Coverage gaps mid-flight are rejoined: when signal is lost while cruising and regained within 30 min, and
+  the jump across the gap matches the heading (within 45°) and speed (0.7–1.3×) flown on both sides, the two
+  pieces become one leg (`Leg.gaps_bridged` counts the joins). An unseen stop shows up as a heading change or a
+  slow jump, so those stay separate. Thresholds: `STITCH_*` in `tracker/thresholds.py`. On the real 2026-10-06
+  sample, 26 gaps were rejoined (signal-lost legs 485 → 459); every join matched cruise speed within ~8%.
+- Busy landing clusters (more than 20 landings) get name suggestions from OpenStreetMap: the worker asks the
+  Overpass API for named hospitals and helipads within 500 m, a few per idle tick, caches answers by ~100 m
+  location, and retries failures after an hour. The Cluster queue shows the best match; Create site (or Use on
+  another nearby match) pre-fills its name, city and state (the feature's address, else the city and state
+  containing the cluster) as a Hospital helipad. Suggestions only; an admin creates the site.
 - A leg that ends in `signal_lost` is bridged to the next leg's departure (within 2 h), so a hospital landing
   below coverage still counts if the aircraft is seen lifting off from that pad.
 - Confirm/reject refreshes missions and aggregates immediately; site edits need a rebuild (queued button,

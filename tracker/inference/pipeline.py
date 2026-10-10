@@ -75,6 +75,7 @@ def build_legs_for_hex(source, hexid, index, adapter=None):
                     confidence=r.confidence,
                     simplified_track=r.simplified_track,
                     start_on_ground=r.start_on_ground,
+                    gaps_bridged=r.gaps_bridged,
                     callsign=",".join(sorted(r.callsigns))[:50],
                 )
                 for r in results
