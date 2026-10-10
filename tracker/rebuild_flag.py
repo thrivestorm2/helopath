@@ -47,7 +47,7 @@ def rebuild_progress():
 # How far through a rebuild each step starts, in percent. Building legs is most of the work; within it the
 # percentage follows the aircraft count ("building legs: aircraft 239 of 682").
 STEP_PERCENT = [("clearing", 1), ("building legs", 2), ("discovering", 86), ("finding landing clusters", 90),
-                ("chaining missions", 93), ("totalling", 97)]
+                ("chaining missions", 93), ("totalling", 97), ("mapping coverage", 99)]
 LEGS_START, LEGS_END = 2, 86
 
 

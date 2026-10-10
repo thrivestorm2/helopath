@@ -50,7 +50,7 @@ def run_task(task: OpsTask):
             src = settings.PRIMARY_SOURCE
             log(f"auto-confirmed {apply_auto_confirm_rules()} aircraft by rule")
             log(f"clusters {pipeline.build_clusters(src)}, missions {pipeline.build_missions(src)}, "
-                f"aggregates {pipeline.build_aggregates(src)}")
+                f"aggregates {pipeline.build_aggregates(src)}, coverage cells {pipeline.build_coverage(src)}")
         task.status = OpsTask.OK
         log("done")
     except Exception as e:

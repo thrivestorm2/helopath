@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from collections import Counter, defaultdict
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.core.exceptions import PermissionDenied
@@ -25,6 +26,7 @@ from .models import (
     AutoConfirmRule,
     PlaceSuggestion,
     Aircraft,
+    CoverageCell,
     DismissedClusterMemory,
     IngestRun,
     LandingCluster,
@@ -872,6 +874,7 @@ def operations(request):
 
 
 MAP_KINDS = ("base", "hospital", "hangar")
+MAP_LAYERS = (*MAP_KINDS, "coverage")  # coverage is off unless asked for
 
 
 def site_map(request):
@@ -938,10 +941,21 @@ def site_map(request):
     for s in hospitals.order_by("name"):
         markers.append(marker("hospital", s, [landings_line(s)]))
 
-    shown = [k for k in MAP_KINDS if k in get.getlist("show")] if "f" in get else list(MAP_KINDS)
+    shown = [k for k in MAP_LAYERS if k in get.getlist("show")] if "f" in get else list(MAP_KINDS)
     counts = Counter(m["kind"] for m in markers)
     return render(request, "tracker/site_map.html", {
         "markers": markers, "shown": shown, "counts": [(k, counts[k]) for k in MAP_KINDS],
         "operators": Operator.objects.order_by("name"), "programs": Program.objects.select_related("operator"),
         "operator": operator, "program": program, "confirmed_only": _confirmed_only(request),
+        "coverage_days": settings.COVERAGE_DAYS,
     })
+
+
+def coverage_data(request):
+    """Grid cells where ADS-B positions were received, for the map's coverage layer (fetched when turned on)."""
+    rows = list(CoverageCell.objects.filter(source=SOURCE).values_list("lat_i", "lon_i", "legs", "lowest_ft"))
+    counts = sorted(r[2] for r in rows)
+    # The colour scale tops out at the 95th percentile so a few very busy cells do not wash out the rest.
+    top = counts[min(len(counts) - 1, int(0.95 * len(counts)))] if counts else 0
+    return JsonResponse({"size": settings.COVERAGE_CELL_DEG, "top": top, "days": settings.COVERAGE_DAYS,
+                         "cells": [[a, b, n, None if low is None else round(low)] for a, b, n, low in rows]})
