@@ -27,8 +27,10 @@
 <div class="card"><h2>Missions by operator</h2>
   <table>{% for pk, name, n, link in by_operator %}<tr data-href="{{ link }}"><td><a href="{{ link }}"{% if not pk %} class="muted"{% endif %}>{{ name }}</a></td><td class="n">{{ n|intcomma }}</td></tr>
   {% empty %}<tr><td class="muted">No missions yet.</td></tr>{% endfor %}</table></div>
-<div class="card"><h2>Missions by base</h2>
-  <table>{% for pk, name, n in by_base %}<tr{% if pk %} data-href="{% url 'site_detail' pk %}{% if confirmed_only %}?confirmed=1{% endif %}"{% endif %}><td>{% if pk %}<a href="{% url 'site_detail' pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ name }}</a>{% else %}<span class="muted">{{ name }}</span>{% endif %}</td><td class="n">{{ n|intcomma }}</td></tr>
-  {% empty %}<tr><td class="muted">No missions yet.</td></tr>{% endfor %}</table></div>
+<div class="card"><h2>Hospitals receiving the most patients</h2>
+  <table><tr><th>Hospital</th><th class="n" title="Inferred patients flown in from scenes">From scenes</th><th class="n">Received</th></tr>
+  {% for h in top_receiving %}<tr data-href="{% url 'site_detail' h.destination_site %}{% if confirmed_only %}?confirmed=1{% endif %}"><td><a href="{% url 'site_detail' h.destination_site %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ h.destination_site__name }}</a></td><td class="n muted">{{ h.scenes|default:0|intcomma }}</td><td class="n">{{ h.n|intcomma }}</td></tr>
+  {% empty %}<tr><td colspan="3" class="muted">No patients received yet.</td></tr>{% endfor %}</table>
+  <p class="muted"><a href="{% url 'site_list' %}?type=hospital_helipad&amp;sort=-received{% if confirmed_only %}&amp;confirmed=1{% endif %}">All hospitals by patients received →</a></p></div>
 </div>
 {% endblock %}

@@ -31,7 +31,12 @@ class OperatorPageTests(TestCase):
     def test_dashboard_links_operator_and_base(self):
         r = self.client.get(reverse("dashboard"))
         self.assertContains(r, f'href="{reverse("operator_detail", args=[self.op.pk])}">Air Evac Lifeteam</a>')
-        self.assertContains(r, f'href="{reverse("site_detail", args=[self.base.pk])}">Base 12</a>')
+        # Hospitals receiving the most patients (the interfacility rows land at Hospital B), not bases.
+        self.assertContains(r, "Hospitals receiving the most patients")
+        self.assertContains(r, f'href="{reverse("site_detail", args=[self.hosp_b.pk])}">Hospital B</a>')
+        self.assertNotContains(r, ">Base 12</a>")
+        self.assertEqual([(h["destination_site__name"], h["n"], h["scenes"]) for h in r.context["top_receiving"]],
+                         [("Hospital B", 7, None)])
         self.assertContains(r, f'href="{reverse("aircraft_list")}?operator=none" class="muted">(unassigned)</a>')
         r = self.client.get(reverse("dashboard") + "?confirmed=1")
         self.assertContains(r, f'href="{reverse("operator_detail", args=[self.op.pk])}?confirmed=1"')

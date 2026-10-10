@@ -6,6 +6,7 @@
   <select name="type"><option value="">Any type</option>{% for v, l in types %}<option value="{{ v }}" {% if request.GET.type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="state"><option value="">Any state</option>{% for s in states %}<option {% if request.GET.state == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
   <select name="view"><option value="table" {% if view == 'table' %}selected{% endif %}>Table</option><option value="map" {% if view == 'map' %}selected{% endif %}>Map</option></select>
+  {% include "tracker/_confirmed_toggle.html" %}
   <button>Apply</button>
   {% if is_admin %}<a class="button" href="{% url 'admin:tracker_site_add' %}">Add site</a>{% endif %}
 </form>
@@ -23,6 +24,8 @@
   <th>Coordinates</th>
   <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == 'radius_m' %}-{% endif %}radius_m">Radius (m)</a></th>
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'reviewed' %}-{% endif %}reviewed">Reviewed</a></th>
+  <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == '-received' %}{% else %}-{% endif %}received" title="Inferred patients brought in: from scenes and from other hospitals">Received</a></th>
+  <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == '-sent' %}{% else %}-{% endif %}sent" title="Inferred patients transferred out to other hospitals">Sent</a></th>
 </tr>
 {% for s in page %}
 <tr data-href="{% url 'site_detail' s.pk %}">
@@ -30,8 +33,10 @@
   <td data-label="City">{{ s.city }}</td><td data-label="State">{{ s.state }}</td><td data-label="FAA ID">{{ s.faa_id }}</td>
   <td data-label="Coordinates"><code>{{ s.lat|floatformat:5 }}, {{ s.lon|floatformat:5 }}</code></td><td class="n" data-label="Radius (m)">{{ s.radius_m }}</td>
   <td data-label="Reviewed">{% if s.reviewed %}✓{% else %}<span class="muted">no</span>{% endif %}</td>
+  <td class="n" data-label="Patients received">{{ s.received|default:"—" }}</td>
+  <td class="n" data-label="Patients sent">{{ s.sent|default:"—" }}</td>
 </tr>
-{% empty %}<tr><td colspan="8" class="muted empty-row">No sites match.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="10" class="muted empty-row">No sites match.</td></tr>{% endfor %}
 </table></div>
 {% include "tracker/_pager.html" %}
 {% endif %}

@@ -7,7 +7,8 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -94,17 +95,20 @@ def dashboard(request):
     months = sorted(set(legs_by_month) | set(missions_by_month))
     aggs = MonthlyAggregate.objects.filter(source=SOURCE, includes_unreviewed=not _confirmed_only(request))
     by_operator = defaultdict(int)  # (pk, name) -> missions; pk None means unassigned
-    by_base = defaultdict(int)
-    for a in aggs.select_related("operator", "base"):
+    for a in aggs.select_related("operator"):
         by_operator[(a.operator_id, a.operator.name if a.operator else "(unassigned)")] += a.count
-        by_base[(a.base_id, a.base.name if a.base else "(no base)")] += a.count
+    # Hospitals receiving the most inferred patients (from scenes and from other hospitals).
+    top_receiving = (aggs.filter(label__in=PATIENT_IN, destination_site__site_type=Site.HOSPITAL)
+                     .values("destination_site", "destination_site__name")
+                     .annotate(n=Sum("count"), scenes=Sum("count", filter=Q(label="scene")))
+                     .order_by("-n", "destination_site__name")[:10])
     ok_runs = IngestRun.objects.filter(source=SOURCE, status=IngestRun.OK)
     return render(request, "tracker/dashboard.html", {
         "rate": rate, "resolved": resolved, "total": total,
         "months": [(m, legs_by_month[m], missions_by_month[m]) for m in months],
         "by_operator": [(pk, name, n, operator_link(request, pk))
                         for (pk, name), n in sorted(by_operator.items(), key=lambda kv: -kv[1])],
-        "by_base": [(pk, name, n) for (pk, name), n in sorted(by_base.items(), key=lambda kv: -kv[1])],
+        "top_receiving": top_receiving,
         "aircraft_by_status": dict(Aircraft.objects.values_list("status").annotate(n=Count("id"))),
         "days_ingested": ok_runs.values("day").distinct().count(),
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
@@ -200,8 +204,62 @@ def aircraft_apply(request, pk):
     return redirect(reverse("aircraft_detail", args=[aircraft.pk]) + "#lookup")
 
 
+PATIENT_IN = ("interfacility", "scene")  # labels that bring a patient to their destination hospital
+
+
+def _patient_aggs(request):
+    return MonthlyAggregate.objects.filter(source=SOURCE, includes_unreviewed=not _confirmed_only(request))
+
+
+def _with_patient_counts(request, qs):
+    """Annotate sites with inferred patients received (scene or interfacility in) and sent (interfacility out)."""
+    aggs = _patient_aggs(request)
+
+    def total(site_field, **kw):
+        sub = (aggs.filter(**{site_field: OuterRef("pk")}, **kw).order_by().values(site_field)
+               .annotate(s=Sum("count")).values("s"))
+        return Coalesce(Subquery(sub, output_field=IntegerField()), 0)
+
+    return qs.annotate(received=total("destination_site", label__in=PATIENT_IN),
+                       sent=total("origin_site", label="interfacility"))
+
+
+def patient_flows(request, site, limit=25, show_months=6):
+    """Inferred patients received at and sent from a site, per hospital on the other end (scenes are one row of the
+    received table): the latest `show_months` months, the monthly average and the total over all months with data.
+    Rows rank by total."""
+    aggs = _patient_aggs(request)
+    inbound = aggs.filter(destination_site=site, label__in=PATIENT_IN)
+    outbound = aggs.filter(origin_site=site, label="interfacility")
+    keep = "?confirmed=1" if _confirmed_only(request) else ""
+    scene_map = route_map_url(request, None, site, "scene")
+    received, sent = defaultdict(Counter), defaultdict(Counter)  # (name, link) -> month -> patients
+    for label, pk, name, month, n in inbound.values_list("label", "origin_site", "origin_site__name", "month",
+                                                          "count"):
+        key = ("Scenes", scene_map) if label == "scene" else (name, reverse("site_detail", args=[pk]) + keep)
+        received[key][month] += n
+    for pk, name, month, n in outbound.values_list("destination_site", "destination_site__name", "month", "count"):
+        sent[(name, reverse("site_detail", args=[pk]) + keep)][month] += n
+    all_months = sorted({m for table in (received, sent) for c in table.values() for m in c})
+    months = all_months[-show_months:]  # columns that fit on a phone; average and total use every month
+
+    def rows(table):
+        ranked = sorted(table.items(), key=lambda kv: (-sum(kv[1].values()), kv[0][0]))[:limit]
+        return [(name, link, [c[m] for m in months], sum(c.values()) / len(all_months), sum(c.values()))
+                for (name, link), c in ranked]
+
+    total = lambda table: sum(sum(c.values()) for c in table.values())
+    from_scenes = sum(received.get(("Scenes", scene_map), Counter()).values())
+    unresolved = aggs.filter(destination_site=site, label="single_hospital_unresolved").aggregate(n=Sum("count"))["n"]
+    return {
+        "months": months, "n_months": len(all_months), "received_rows": rows(received), "sent_rows": rows(sent),
+        "received": total(received), "from_scenes": from_scenes, "from_hospitals": total(received) - from_scenes,
+        "sent": total(sent), "unresolved": unresolved or 0, "scene_map": scene_map,
+    }
+
+
 def site_list(request):
-    qs = Site.objects.filter(is_active=True)
+    qs = _with_patient_counts(request, Site.objects.filter(is_active=True))
     q = request.GET.get("q", "").strip()
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(faa_id__icontains=q) | Q(city__icontains=q))
@@ -209,7 +267,8 @@ def site_list(request):
         qs = qs.filter(site_type=request.GET["type"])
     if request.GET.get("state"):
         qs = qs.filter(state=request.GET["state"])
-    qs, sort = _sorted(qs, request, {"name", "site_type", "city", "state", "faa_id", "radius_m", "reviewed"}, "name")
+    qs, sort = _sorted(qs, request, {"name", "site_type", "city", "state", "faa_id", "radius_m", "reviewed",
+                                     "received", "sent"}, "name")
     view = request.GET.get("view", "table")
     return render(request, "tracker/site_list.html", {
         "page": _page(request, qs, 100) if view == "table" else None,
@@ -217,6 +276,7 @@ def site_list(request):
                       for s in qs] if view == "map" else [],
         "view": view, "sort": sort, "filter_qs": _filter_qs(request), "types": Site.TYPE_CHOICES,
         "states": Site.objects.exclude(state="").values_list("state", flat=True).distinct().order_by("state"),
+        "confirmed_only": _confirmed_only(request),
     })
 
 
@@ -241,9 +301,10 @@ def site_detail(request, pk):
         rows.append((op_id, name, operator_link(request, op_id, site), [c[m] for m in months], sum(c.values())))
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
-        "site": site, "months": months, "rows": rows, "n_based": n_based,
-        # Once a hangar is set the card just names it; changing it is done on the admin Edit page.
-        "hangar_suggestions": suggest_hangars(site, SOURCE) if n_based and not site.weather_hangar_id else [],
+        "flows": patient_flows(request, site), "site": site, "months": months, "rows": rows, "n_based": n_based,
+        # Once a hangar is set the header just names it; changing it is done on the admin Edit page.
+        "hangar_suggestion": next(iter(suggest_hangars(site, SOURCE, limit=1)), None)
+        if n_based and not site.weather_hangar_id else None,
         "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
     })
 
