@@ -115,7 +115,7 @@ def aircraft_list(request):
     qs = Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related("operator", "program", "base", "inferred_base")
     q = request.GET.get("q", "").strip()
     if q:
-        qs = qs.filter(Q(tail_number__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
+        qs = qs.filter(Q(tail_number__icontains=q) | Q(call_sign__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
                        | Q(program__name__icontains=q))
     if request.GET.get("status"):
         qs = qs.filter(status=request.GET["status"])
@@ -133,8 +133,9 @@ def aircraft_list(request):
     if request.GET.get("site", "").isdigit():  # aircraft with a resolved arrival there, as counted on the site page
         landed_at = get_object_or_404(Site, pk=request.GET["site"])
         qs = qs.filter(pk__in=Leg.objects.filter(source=SOURCE, end_site=landed_at).values("aircraft_id"))
-    qs, sort = _sorted(qs, request, {"tail_number", "icao_hex", "make_model", "status", "qualifying_visits",
-                                     "first_seen", "last_seen", "operator__name", "program__name"}, "tail_number")
+    qs, sort = _sorted(qs.annotate(name=Aircraft.sort_name()), request,
+                       {"name", "icao_hex", "make_model", "status", "qualifying_visits", "first_seen", "last_seen",
+                        "operator__name", "program__name"}, "name")
     bases = Site.objects.filter(Q(based_aircraft__isnull=False) | Q(inferred_based_aircraft__isnull=False)).distinct()
     return render(request, "tracker/aircraft_list.html", {
         "page": _page(request, qs), "sort": sort, "filter_qs": _filter_qs(request), "operators": Operator.objects.all(), "bases": bases,
@@ -261,7 +262,7 @@ def route_map(request):
             if leg.end_site_id is None:
                 points.append({"lat": round(leg.end_lat, 5), "lon": round(leg.end_lon, 5),
                                "lost": leg.end_state == Leg.LOST, "day": local_day(leg.end_ts).isoformat(),
-                               "tail": m.aircraft.tail_number,
+                               "tail": m.aircraft.display_name,
                                "url": reverse("aircraft_detail", args=[m.aircraft_id])})
 
     def pick(model, key):
@@ -279,7 +280,7 @@ def route_map(request):
 def program_detail(request, pk):
     program = get_object_or_404(Program.objects.select_related("operator"), pk=pk)
     aircraft = (Aircraft.objects.filter(program=program, status__in=_statuses(request))
-                .select_related("operator", "base", "inferred_base").order_by("tail_number"))
+                .select_related("operator", "base", "inferred_base").order_by(Aircraft.sort_name()))
     missions = Mission.objects.filter(source=SOURCE, aircraft__program=program, aircraft__status__in=_statuses(request))
     labels = [code for code, _ in Mission.LABELS]
     per_month = defaultdict(Counter)
@@ -319,7 +320,7 @@ def set_weather_hangar(request, pk):
 def operator_detail(request, pk):
     operator = get_object_or_404(Operator, pk=pk)
     aircraft = list(Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
-                    .select_related("program", "base", "inferred_base").order_by("tail_number"))
+                    .select_related("program", "base", "inferred_base").order_by(Aircraft.sort_name()))
     # Aircraft grouped by program: the operator's programs (even with no aircraft shown) by name, then any other
     # program its aircraft carry, then those with none. Only grouped when there is a program to group by.
     groups = {p: [] for p in operator.programs.all()}

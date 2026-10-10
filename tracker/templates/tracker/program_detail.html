@@ -7,9 +7,9 @@
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
 
 <h2>Aircraft</h2>
-<div class="scroll"><table class="stack"><tr class="head"><th>Tail</th><th>Make / model</th><th>Operator</th><th>Base</th><th>Status</th></tr>
+<div class="scroll"><table class="stack"><tr class="head"><th>Aircraft</th><th>Make / model</th><th>Operator</th><th>Base</th><th>Status</th></tr>
 {% for a in aircraft %}
-<tr data-href="{% url 'aircraft_detail' a.pk %}"><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.tail_number }}</a></td><td data-label="Make / model">{{ a.make_model|default:"—" }}</td>
+<tr data-href="{% url 'aircraft_detail' a.pk %}"><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a></td><td data-label="Make / model">{{ a.make_model|default:"—" }}</td>
   <td data-label="Operator">{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
   <td data-label="Base">{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>
   <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td></tr>
