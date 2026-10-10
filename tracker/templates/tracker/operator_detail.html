@@ -4,6 +4,17 @@
 <p class="muted">{% if operator.parent_company %}Part of {{ operator.parent_company }} · {% endif %}{{ aircraft|length }} aircraft · {{ total|intcomma }} inferred missions
   {% if is_admin %}· <a href="{% url 'admin:tracker_operator_change' operator.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+{% if buyers %}<details class="card acquired">
+  <summary>Acquired by another operator…</summary>
+  <form method="post" action="{% url 'operator_acquired' operator.pk %}"
+        onsubmit="return confirm('Make {{ operator.name|escapejs }} a program of ' + this.buyer.options[this.buyer.selectedIndex].text + '? This removes the operator and cannot be undone here.')">{% csrf_token %}
+    <p class="muted">{{ operator.name }} becomes a program of the operator you choose. All its
+      aircraft move to that operator (those without a program join the new program), and its programs and
+      auto-confirm rules move too. Super admins only.</p>
+    <select name="buyer" required><option value="">Buyer…</option>{% for o in buyers %}<option value="{{ o.pk }}">{{ o }}</option>{% endfor %}</select>
+    <button class="danger">Make it a program</button>
+  </form>
+</details>{% endif %}
 
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
 <div class="card"><h2 style="margin-top:0">Aircraft{% if program_groups %} by program{% endif %}</h2>
