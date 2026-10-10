@@ -28,6 +28,11 @@ class ReturnToPageMixin:
         ok = nxt.startswith("/") and url_has_allowed_host_and_scheme(nxt, {request.get_host()}, request.is_secure())
         return nxt if ok else None
 
+    def response_add(self, request, obj, post_url_continue=None):
+        response = super().response_add(request, obj, post_url_continue)
+        nxt = self._next_url(request)
+        return HttpResponseRedirect(nxt) if nxt and "_save" in request.POST else response
+
     def response_change(self, request, obj):
         response = super().response_change(request, obj)
         nxt = self._next_url(request)

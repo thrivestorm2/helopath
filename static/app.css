@@ -169,3 +169,7 @@ table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--car
 .coverage-legend[hidden] { display:none; }
 .coverage-scale { display:flex; align-items:center; gap:6px; margin:4px 0; }
 main.full { position:relative; }
+.pin.spot { background:#7c3aed; border-radius:50%; width:12px; height:12px; position:relative; }
+.pin.spot::after { content:"?"; position:absolute; inset:0; color:#fff; font:700 9px/12px system-ui, sans-serif; text-align:center; }
+.map-bar .pin.spot { width:10px; height:10px; } .map-bar .pin.spot::after { font-size:8px; line-height:10px; }
+.leaflet-marker-icon .pin.spot { margin:2px; }
