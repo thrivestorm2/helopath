@@ -177,3 +177,8 @@ main.full { position:relative; }
 table.flows tr.more { display:none; }
 table.flows.show-all tr.more { display:table-row; }
 button.flows-more { margin:6px 0 4px; }
+/* ADS-B quality score: green best, red worst, grey not enough data. */
+.quality-line { margin:-8px 0 10px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; font-size:13px; }
+.quality-badge { display:inline-block; color:#fff; font-weight:700; border-radius:999px; padding:4px 12px; font-size:14px;
+  white-space:nowrap; }
+.quality-badge.small { padding:2px 8px; font-size:12px; min-width:2.2em; text-align:center; }

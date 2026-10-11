@@ -26,6 +26,7 @@
   <th><a href="?{{ filter_qs }}&sort={% if sort == 'reviewed' %}-{% endif %}reviewed">Reviewed</a></th>
   <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == '-received' %}{% else %}-{% endif %}received" title="Inferred patients brought in: from scenes and from other hospitals">Received</a></th>
   <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == '-sent' %}{% else %}-{% endif %}sent" title="Inferred patients transferred out to other hospitals">Sent</a></th>
+  <th class="n"><a href="?{{ filter_qs }}&sort={% if sort == 'quality' %}-{% endif %}quality" title="ADS-B quality, 0-100 (worst first; click again for best first)">ADS-B quality</a></th>
 </tr>
 {% for s in page %}
 <tr data-href="{% url 'site_detail' s.pk %}">
@@ -35,8 +36,9 @@
   <td data-label="Reviewed">{% if s.reviewed %}✓{% else %}<span class="muted">no</span>{% endif %}</td>
   <td class="n" data-label="Patients received">{{ s.received|default:"—" }}</td>
   <td class="n" data-label="Patients sent">{{ s.sent|default:"—" }}</td>
+  <td class="n" data-label="ADS-B quality"><span class="quality-badge small" style="background:{{ s.quality.color }}" title="{{ s.quality.summary }}">{% if s.quality.score is None %}—{% else %}{{ s.quality.score }}{% endif %}</span></td>
 </tr>
-{% empty %}<tr><td colspan="10" class="muted empty-row">No sites match.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="11" class="muted empty-row">No sites match.</td></tr>{% endfor %}
 </table></div>
 {% include "tracker/_pager.html" %}
 {% endif %}

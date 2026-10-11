@@ -45,6 +45,13 @@ FAA_LINK_RADIUS_M = _env("FAA_LINK_RADIUS_M", 250)
 AUTO_RADIUS_MAX_M = _env("AUTO_RADIUS_MAX_M", 1000)                  # hospitals, bases, other
 AUTO_RADIUS_MAX_AIRPORT_M = _env("AUTO_RADIUS_MAX_AIRPORT_M", 3000)
 
+# ADS-B quality score per site (site page, Sites list, map): over QUALITY_DAYS, landings seen count 1, landings
+# inferred 1/2, departures first seen on the ground 1, departures first seen airborne 0, and signal lost within
+# QUALITY_NEAR_M (nearest site only) 0. Fewer than QUALITY_MIN_EVENTS events: "not enough data".
+QUALITY_DAYS = _env("QUALITY_DAYS", 90)
+QUALITY_NEAR_M = _env("QUALITY_NEAR_M", 3000)
+QUALITY_MIN_EVENTS = _env("QUALITY_MIN_EVENTS", 5)
+
 # Leg stitching: rejoin one flight that coverage split into two airborne legs. The pieces are
 # joined only when the aircraft was cruising at both ends, the gap is short, and the jump across
 # the gap matches both the heading and the speed it was flying (a slow "implied speed" means it
