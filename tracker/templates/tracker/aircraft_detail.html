@@ -53,7 +53,7 @@
 <div class="card" id="lookup">
   <h2 style="margin-top:0">Look it up</h2>
   <p class="muted">Search for {{ aircraft.tail_number }} on (opens in a new tab):</p>
-  <div class="lookup-links">{% for label, url, title in lookup_links %}<a class="button" href="{{ url }}" target="_blank" rel="noopener noreferrer"{% if title %} title="{{ title }}"{% endif %}>{{ label }}</a>{% endfor %}</div>
+  <div class="lookup-links">{% for label, url, title, cls in lookup_links %}<a class="button{% if cls %} {{ cls }}{% endif %}" href="{{ url }}" target="_blank" rel="noopener noreferrer"{% if title %} title="{{ title }}"{% endif %}>{{ label }}</a>{% endfor %}</div>
   {% if suggest_call_sign %}
   <h3>Suggested call sign</h3>
   {% for cs, n in call_sign_suggestions %}
