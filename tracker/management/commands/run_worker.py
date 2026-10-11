@@ -14,7 +14,7 @@ from django.utils import timezone
 from tracker.ingest import process_rebuild_requests, run_nightly, utc_today
 from tracker.models import OpsTask, RebuildRequest, WorkerState
 from tracker.ops import recover_interrupted, run_task
-from tracker.places import suggest_pending
+from tracker.places import fill_site_places, suggest_pending
 
 
 def tick(now=None, log=print):
@@ -49,6 +49,7 @@ def tick(now=None, log=print):
 
     # Spare time: suggest names for busy landing clusters (a few OpenStreetMap lookups per tick).
     looked_up = suggest_pending()
+    looked_up += fill_site_places(max(0, settings.PLACE_LOOKUPS_PER_TICK - looked_up))
     return f"idle (place lookups: {looked_up})" if looked_up else "idle"
 
 

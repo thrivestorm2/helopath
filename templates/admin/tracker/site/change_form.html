@@ -57,6 +57,34 @@
   });
   draw();
   fitCircle(false);
+
+  // City and state follow the location: blank ones are filled from OpenStreetMap when the point is set, and
+  // values filled this way are replaced if the point moves. Anything typed by hand is left alone.
+  const city = document.getElementById('id_city'), state = document.getElementById('id_state');
+  const auto = {city: null, state: null};
+  const note = document.createElement('p');
+  note.className = 'help';
+  note.style.margin = '4px 10px';
+  (state.closest('.form-row') || state.parentNode).appendChild(note);
+  let pending = 0;
+  function fillPlace() {
+    if (!hasPoint()) return;
+    const want = [[city, 'city'], [state, 'state']].filter(([el, k]) => el.value === '' || el.value === auto[k]);
+    if (!want.length) return;
+    const ticket = ++pending;
+    note.textContent = 'Looking up city and state…';
+    fetch('{% url "site_place" %}?lat=' + encodeURIComponent(lat.value) + '&lon=' + encodeURIComponent(lon.value),
+          {credentials: 'same-origin'}).then(r => r.json()).then(d => {
+      if (ticket !== pending) return;  // the point moved again
+      if (d.error) { note.textContent = 'City/state lookup failed; type them in (or save and they are filled later).'; return; }
+      want.forEach(([el, k]) => { if (d[k] && (el.value === '' || el.value === auto[k])) { el.value = d[k]; auto[k] = d[k]; } });
+      note.textContent = (d.city || d.state) ? 'City and state filled from the map location (OpenStreetMap).'
+                                             : 'No city found at this location; leave blank or type one.';
+    }).catch(() => { if (ticket === pending) note.textContent = ''; });
+  }
+  [lat, lon].forEach(el => el.addEventListener('change', fillPlace));
+  map.on('click', fillPlace);
+  fillPlace();
 })();
 </script>
 {% endblock %}
