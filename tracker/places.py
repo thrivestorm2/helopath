@@ -12,10 +12,11 @@ from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 
 from .geo import haversine_m
-from .models import LandingCluster, PlaceSuggestion
+from .models import LandingCluster, PlaceSuggestion, Site
 
 log = logging.getLogger("tracker.places")
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -54,6 +55,22 @@ def overpass_query(lat, lon, radius_m):
             f");out center tags;"
             f"is_in({lat:.6f},{lon:.6f})->.a;"
             f'area.a[boundary=administrative][admin_level~"^(4|8)$"];out tags;')
+
+
+def city_state_query(lat, lon):
+    """Just the city (admin level 8) and state (level 4) containing the point."""
+    return (f"[out:json][timeout:15];is_in({lat:.6f},{lon:.6f})->.a;"
+            f'area.a[boundary=administrative][admin_level~"^(4|8)$"];out tags;')
+
+
+def place_for_point(lat, lon, fetch=None):
+    """(city, state code) for a point: from a cached cluster lookup at the same spot when there is one, else
+    from OpenStreetMap. Either may be blank (e.g. outside any incorporated city). Raises on network errors."""
+    s = cached(lat, lon)
+    if s is not None and not s.error and (s.city or s.state):
+        return s.city, s.state
+    data = (fetch or fetch_overpass)(city_state_query(lat, lon))
+    return containing_place(data.get("elements", []))
 
 
 def state_code(value):
@@ -156,4 +173,32 @@ def suggest_pending(max_lookups=None, fetch=fetch_overpass):
             break
         lookup(cluster.lat, cluster.lon, fetch=fetch)
         n += 1
+    return n
+
+
+_site_tries = {}  # site pk -> when its city/state was last looked up (this worker process)
+RETRY_SITE_AFTER = timedelta(days=1)
+
+
+def fill_site_places(max_lookups=None, fetch=None, now=None):
+    """Fill blank city/state on active sites from their coordinates, a few per tick. Only blank fields are
+    written, so nothing an admin typed is replaced. Returns how many sites were looked up."""
+    now = now or timezone.now()
+    limit = settings.PLACE_LOOKUPS_PER_TICK if max_lookups is None else max_lookups
+    n = 0
+    for site in Site.objects.filter(is_active=True).filter(models.Q(city="") | models.Q(state="")).order_by("-pk"):
+        if n >= limit:
+            break
+        if now - _site_tries.get(site.pk, now - RETRY_SITE_AFTER) < RETRY_SITE_AFTER:
+            continue
+        _site_tries[site.pk] = now
+        n += 1
+        try:
+            city, state = place_for_point(site.lat, site.lon, fetch=fetch)
+        except Exception as e:  # keep the worker running; try again tomorrow
+            log.warning("city/state lookup failed for site %s: %s", site.pk, e)
+            continue
+        values = {k: v for k, v in (("city", city), ("state", state)) if v and not getattr(site, k)}
+        if values:
+            Site.objects.filter(pk=site.pk).update(**values)  # no rebuild needed: city/state do not affect counts
     return n
