@@ -2,7 +2,7 @@
 
 from django.db import transaction
 
-from .models import Aircraft, AutoConfirmRule, MonthlyAggregate, Program
+from .models import Aircraft, AutoConfirmRule, Mission, MonthlyAggregate, Program, ServicePeriod
 
 
 @transaction.atomic
@@ -33,5 +33,7 @@ def absorb_operator(acquired, buyer):
     rules.filter(program__isnull=True).update(program=program)
     rules.update(operator=buyer)
     MonthlyAggregate.objects.filter(operator=acquired).update(operator=buyer)  # until the queued refresh
+    Mission.objects.filter(operator=acquired).update(operator=buyer)
+    ServicePeriod.objects.filter(operator=acquired).update(operator=buyer)  # past periods follow the buyer too
     acquired.delete()
     return program, moved

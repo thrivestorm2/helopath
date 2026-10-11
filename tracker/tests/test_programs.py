@@ -23,7 +23,8 @@ class ProgramTests(TestCase):
         ts = datetime(2026, 9, 3, 15, tzinfo=timezone.utc)
         for a in (self.a, self.d, self.other):
             Mission.objects.create(aircraft=a, source="adsblol", start_ts=ts, end_ts=ts, label="interfacility",
-                                   origin_site=hosp_a, destination_site=hosp_b, confidence=0.9, rule_fired="t")
+                                   origin_site=hosp_a, destination_site=hosp_b, confidence=0.9, rule_fired="t",
+                                   program=a.program, operator=a.operator)  # the period's, as the pipeline sets
         self.viewer = User.objects.create_user("v", password="x")
         self.viewer.groups.add(Group.objects.get(name="Viewer"))
         self.client.force_login(self.viewer)
