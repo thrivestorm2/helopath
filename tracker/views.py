@@ -1027,18 +1027,25 @@ def site_place(request):
         # New-site form: up to three names to pick from, plus the city and state.
         try:
             names, (city, state) = places.site_name_options(lat, lon)
-        except Exception:
-            cached = places.cached(lat, lon)  # a cluster lookup made earlier, if any
-            names = [{**c, "site_type": places.SITE_TYPE_FOR_KIND.get(c.get("kind"), Site.BASE)}
-                     for c in (cached.candidates if cached else [])][:3]
-            if not names:
-                return JsonResponse({"city": "", "state": "", "names": [], "error": "lookup failed"})
-            city, state = cached.city, cached.state
-        return JsonResponse({"city": city, "state": state, "names": names, "error": ""})
+            return JsonResponse({"city": city, "state": state, "names": names, "error": ""})
+        except Exception as e:
+            reason = str(e)[:300]
+        # Names unavailable: use a cluster lookup made earlier, if any, and still try for city/state.
+        cached = places.cached(lat, lon)
+        names = [{**c, "site_type": places.SITE_TYPE_FOR_KIND.get(c.get("kind"), Site.BASE)}
+                 for c in (cached.candidates if cached else [])][:3]
+        city, state = (cached.city, cached.state) if cached else ("", "")
+        if not (city or state):
+            try:
+                city, state = places.place_for_point(lat, lon)
+            except Exception:
+                pass
+        return JsonResponse({"city": city, "state": state, "names": names,
+                             "error": "" if names else f"Nearby names unavailable: {reason}"})
     try:
         city, state = places.place_for_point(lat, lon)
-    except Exception:
-        return JsonResponse({"city": "", "state": "", "error": "lookup failed"})
+    except Exception as e:
+        return JsonResponse({"city": "", "state": "", "error": f"City/state lookup failed: {str(e)[:300]}"})
     return JsonResponse({"city": city, "state": state, "error": ""})
 
 
