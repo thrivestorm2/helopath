@@ -184,3 +184,4 @@ button.flows-more { margin:6px 0 4px; }
 .quality-badge { display:inline-block; color:#fff; font-weight:700; border-radius:999px; padding:4px 12px; font-size:14px;
   white-space:nowrap; }
 .quality-badge.small { padding:2px 8px; font-size:12px; min-width:2.2em; text-align:center; }
+h1 .faa-id { font-weight: 400; }

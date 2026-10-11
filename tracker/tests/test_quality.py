@@ -77,3 +77,17 @@ class QualityTests(TestCase):
         # The confirmed-only view leaves out discovered aircraft.
         self.leg(end=self.h, state=Leg.LOST, ac=self.d)
         self.assertEqual(site_quality([self.h], (Aircraft.CONFIRMED,))[self.h.pk].events, 5)
+
+
+class SiteHeaderTests(TestCase):
+    def test_faa_id_in_parentheses_after_the_name(self):
+        viewer = User.objects.create_user("v", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        with_id = Site.objects.create(name="OSF Saint Francis", site_type=Site.HOSPITAL, faa_id="IL01", lat=40, lon=-89)
+        without = Site.objects.create(name="Field Pad", site_type=Site.OTHER, lat=40, lon=-89)
+        r = self.client.get(reverse("site_detail", args=[with_id.pk]))
+        self.assertContains(r, '<h1>OSF Saint Francis <span class="muted faa-id">(IL01)</span></h1>', html=False)
+        self.assertNotContains(r, "· FAA IL01")  # not repeated in the details line
+        r = self.client.get(reverse("site_detail", args=[without.pk]))
+        self.assertContains(r, "<h1>Field Pad</h1>")
