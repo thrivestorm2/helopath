@@ -207,6 +207,38 @@ class ShareLinkTests(TestCase):
         self.assertEqual(self.norm(self.SHARE, lands_on="https://www.facebook.com/login/?next=https%3A%2F%2Fwww."
                                                          "facebook.com%2Fosflifeflight%2F")[0], "osflifeflight")
 
+    def test_people_links_never_stored_as_people(self):
+        from django.core.exceptions import ValidationError
+
+        from tracker import social
+        people = "https://www.facebook.com/people/OSF-Life-Flight/100063512345678/?mibextid=wwXIfr"
+        self.assertEqual(social.normalize("facebook", people), "id:100063512345678")
+        self.assertEqual(social.normalize("facebook", "facebook.com/people/OSF-Life-Flight/100063512345678"),
+                         "id:100063512345678")
+        self.assertEqual(self.norm(self.SHARE, lands_on=people)[0], "id:100063512345678")  # share link to one
+        self.assertEqual(social.normalize("facebook", "facebook.com/pg/osflifeflight/about/"), "osflifeflight")
+        for bad in ("facebook.com/people/OSF-Life-Flight/", "people", "@people", "PEOPLE", "share", "groups"):
+            with self.assertRaises(ValidationError, msg=bad):
+                social.normalize("facebook", bad)
+        with self.assertRaises(ValidationError):
+            social.normalize("instagram", "explore")
+
+    def test_migration_clears_reserved_words(self):
+        from importlib import import_module
+
+        from django.apps import apps
+        op = Operator.objects.create(name="Air Methods", facebook="airmethods")
+        prog = Program.objects.create(name="OSF Life Flight", operator=op)
+        site = Site.objects.create(name="Peoria Intl", site_type=Site.AIRPORT, lat=40.66, lon=-89.69)
+        Program.objects.filter(pk=prog.pk).update(facebook="people", instagram="osflifeflight")
+        Site.objects.filter(pk=site.pk).update(facebook="People")
+        import_module("tracker.migrations.0028_clear_reserved_social").clear_reserved(apps, None)
+        for obj in (op, prog, site):
+            obj.refresh_from_db()
+        self.assertEqual((prog.facebook, prog.instagram), ("", "osflifeflight"))
+        self.assertEqual(site.facebook, "")
+        self.assertEqual(op.facebook, "airmethods")  # real pages untouched
+
     def test_failures_ask_for_the_address_bar_link(self):
         from django.core.exceptions import ValidationError
         for kwargs in ({"error": OSError("blocked")}, {"lands_on": self.SHARE},

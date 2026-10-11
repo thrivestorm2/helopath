@@ -16,8 +16,12 @@ SITES = {
 }
 FACEBOOK_ID_URL = "https://www.facebook.com/profile.php?id={}"
 USERNAME = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+# Path words that are never a page's username (a link starting with one is not a page, and none is ever stored).
 NOT_A_PAGE = {"search", "explore", "home.php", "watch", "groups", "events", "marketplace", "hashtag", "p", "reel",
-              "reels", "stories", "share", "sharer.php", "login", "accounts", "tags"}
+              "reels", "stories", "share", "sharer.php", "login", "accounts", "tags", "people", "pages", "pg",
+              "profile.php", "photo", "photo.php", "photos", "story.php", "permalink.php", "posts", "videos",
+              "media", "friends", "messages", "notifications", "settings", "help", "privacy", "policies", "gaming",
+              "live", "about", "direct", "l.php", "dialog", "plugins", "business", "ads"}
 
 
 def page_url(field, value):
@@ -92,14 +96,16 @@ def normalize(field, value, _depth=0):
             if page_id.isdigit():
                 return f"id:{page_id}"
             raise bad
-        if field == "facebook" and parts[:1] == ["pages"] and parts[-1].isdigit():
-            return f"id:{parts[-1]}"  # facebook.com/pages/Some-Name/123456
+        if field == "facebook" and parts[:1] in (["pages"], ["people"]) and parts[-1].isdigit():
+            return f"id:{parts[-1]}"  # facebook.com/pages/Some-Name/123456, facebook.com/people/Some-Name/123456/
+        if field == "facebook" and parts[:1] == ["pg"] and len(parts) > 1:
+            parts = parts[1:]  # older facebook.com/pg/<username>/about links
         if not parts or parts[0].lower() in NOT_A_PAGE:
             raise ValidationError({field: f"That {name} link is not a page; use the page's own link or username."})
         value = parts[0]
     if field == "facebook" and value.startswith("id:") and value[3:].isdigit():
         return value
-    if not USERNAME.match(value):
+    if not USERNAME.match(value) or value.lower() in NOT_A_PAGE:
         raise bad
     return value
 
