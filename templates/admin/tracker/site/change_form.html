@@ -67,19 +67,53 @@
   note.style.margin = '4px 10px';
   (state.closest('.form-row') || state.parentNode).appendChild(note);
   let pending = 0;
+  // New sites: up to three nearby names (hospital, helipad, ambulance/fire station, airport) to pick from.
+  const adding = {{ add|yesno:"true,false" }};
+  const name = document.getElementById('id_name'), siteType = document.getElementById('id_site_type');
+  const picks = document.createElement('div');
+  picks.className = 'name-picks';
+  picks.style.margin = '6px 0 0';
+  (name.closest('.form-row') || name.parentNode).appendChild(picks);
+  const setAuto = (el, k, v) => { if (v && (el.value === '' || el.value === auto[k])) { el.value = v; auto[k] = v; } };
+  function showNames(names) {
+    picks.textContent = '';
+    if (!adding || !names || !names.length) return;
+    const label = document.createElement('span');
+    label.className = 'help';
+    label.textContent = 'Nearby: ';
+    picks.appendChild(label);
+    names.forEach(n => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'button';
+      b.style.margin = '2px 6px 2px 0';
+      b.textContent = `${n.name} (${n.kind}, ${n.distance_m} m)`;
+      b.addEventListener('click', () => {
+        name.value = n.name;
+        if (n.site_type) siteType.value = n.site_type;
+        // A picked place's own city/state replace ones that were filled automatically.
+        if (n.city && (city.value === '' || city.value === auto.city)) { city.value = n.city; auto.city = n.city; }
+        if (n.state && (state.value === '' || state.value === auto.state)) { state.value = n.state; auto.state = n.state; }
+        picks.querySelectorAll('button').forEach(o => o.classList.toggle('default', o === b));
+      });
+      picks.appendChild(b);
+    });
+  }
   function fillPlace() {
     if (!hasPoint()) return;
     const want = [[city, 'city'], [state, 'state']].filter(([el, k]) => el.value === '' || el.value === auto[k]);
-    if (!want.length) return;
+    if (!want.length && !adding) return;
     const ticket = ++pending;
-    note.textContent = 'Looking up city and state…';
-    fetch('{% url "site_place" %}?lat=' + encodeURIComponent(lat.value) + '&lon=' + encodeURIComponent(lon.value),
-          {credentials: 'same-origin'}).then(r => r.json()).then(d => {
+    note.textContent = adding ? 'Looking up nearby names, city and state…' : 'Looking up city and state…';
+    fetch('{% url "site_place" %}?lat=' + encodeURIComponent(lat.value) + '&lon=' + encodeURIComponent(lon.value)
+          + (adding ? '&names=1' : ''), {credentials: 'same-origin'}).then(r => r.json()).then(d => {
       if (ticket !== pending) return;  // the point moved again
-      if (d.error) { note.textContent = 'City/state lookup failed; type them in (or save and they are filled later).'; return; }
-      want.forEach(([el, k]) => { if (d[k] && (el.value === '' || el.value === auto[k])) { el.value = d[k]; auto[k] = d[k]; } });
-      note.textContent = (d.city || d.state) ? 'City and state filled from the map location (OpenStreetMap).'
-                                             : 'No city found at this location; leave blank or type one.';
+      if (d.error) { note.textContent = 'Lookup failed; type them in (city and state are filled later if left blank).'; return; }
+      want.forEach(([el, k]) => setAuto(el, k, d[k]));
+      showNames(d.names);
+      const found = (d.city || d.state) ? 'City and state filled from the map location (OpenStreetMap).'
+                                        : 'No city found at this location; leave blank or type one.';
+      note.textContent = adding && d.names && !d.names.length ? found + ' No named place nearby.' : found;
     }).catch(() => { if (ticket === pending) note.textContent = ''; });
   }
   [lat, lon].forEach(el => el.addEventListener('change', fillPlace));
