@@ -8,14 +8,20 @@ from django.db import models
 from django.db.models import Value
 from django.db.models.functions import Coalesce, Lower, NullIf
 
+from .social import SocialPagesMixin
+
 NO_PATIENT_INFO = "Do not record patient information of any kind here."
 
 SOURCE_CHOICES = [("adsblol", "adsb.lol"), ("adsbx", "ADS-B Exchange sample")]
 
 
-class Operator(models.Model):
+class Operator(SocialPagesMixin, models.Model):
     name = models.CharField(max_length=200, unique=True)
     parent_company = models.CharField(max_length=200, blank=True)
+    facebook_url = models.CharField("Facebook page", max_length=300, blank=True,
+                                    help_text="Link to the Facebook page (or @pagename). Used by Look it up.")
+    instagram_url = models.CharField("Instagram page", max_length=300, blank=True,
+                                     help_text="Link to the Instagram page (or @handle). Used by Look it up.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
 
     class Meta:
@@ -25,13 +31,17 @@ class Operator(models.Model):
         return self.name
 
 
-class Program(models.Model):
+class Program(SocialPagesMixin, models.Model):
     """A flight program: the service name on the aircraft (e.g. a hospital-branded program), flown by an operator."""
 
     name = models.CharField(max_length=200, unique=True)
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL, related_name="programs",
                                  help_text="The company that flies it, if known.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
+    facebook_url = models.CharField("Facebook page", max_length=300, blank=True,
+                                    help_text="Link to the Facebook page (or @pagename). Used by Look it up.")
+    instagram_url = models.CharField("Instagram page", max_length=300, blank=True,
+                                     help_text="Link to the Instagram page (or @handle). Used by Look it up.")
 
     class Meta:
         ordering = ["name"]
@@ -125,7 +135,7 @@ class RegistryAircraft(models.Model):
         return f"N{self.n_number}"
 
 
-class Aircraft(models.Model):
+class Aircraft(SocialPagesMixin, models.Model):
     DISCOVERED, CONFIRMED, REJECTED = "discovered", "confirmed", "rejected"
     STATUS_CHOICES = [(DISCOVERED, "Discovered"), (CONFIRMED, "Confirmed"), (REJECTED, "Rejected")]
     ORIGIN_CHOICES = [("auto", "Auto-discovered"), ("manual", "Manual")]
@@ -158,6 +168,10 @@ class Aircraft(models.Model):
         default=False, help_text="Out of service after 'Active until': no new period, flights after it not counted. "
                                  "Untick to start a new period the day after.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
+    facebook_url = models.CharField("Facebook page", max_length=300, blank=True,
+                                    help_text="Link to the Facebook page (or @pagename). Used by Look it up.")
+    instagram_url = models.CharField("Instagram page", max_length=300, blank=True,
+                                     help_text="Link to the Instagram page (or @handle). Used by Look it up.")
 
     # Automation-owned.
     inferred_base = models.ForeignKey(

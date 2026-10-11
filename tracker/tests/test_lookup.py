@@ -31,9 +31,9 @@ class LookupTests(TestCase):
         self.apply = reverse("aircraft_apply", args=[self.a.pk])
 
     def test_links(self):
-        links = dict(lookup_links(self.a))
-        self.assertEqual(links["Facebook"], "https://www.facebook.com/search/top?q=N911LF")
-        self.assertEqual(links["Instagram"], "https://www.instagram.com/explore/tags/n911lf/")
+        links = {label: url for label, url, _ in lookup_links(self.a)}
+        self.assertEqual(links["Facebook search"], "https://www.facebook.com/search/top?q=N911LF")
+        self.assertEqual(links["Instagram search"], "https://www.instagram.com/explore/tags/n911lf/")
         self.assertIn("nNumberTxt=911LF", links["FAA registry"])  # FAA wants the number without the N
         self.assertIn("%22N911LF%22", links["Google"])
         self.assertNotIn("X", links)
@@ -98,3 +98,60 @@ class LookupTests(TestCase):
         self.assertEqual(r.status_code, 403)
         self.a.refresh_from_db()
         self.assertFalse(self.a.call_sign_reviewed)
+
+
+class SocialPageTests(TestCase):
+    def setUp(self):
+        self.op = Operator.objects.create(name="Air Methods", facebook_url="https://www.facebook.com/airmethods",
+                                          instagram_url="https://www.instagram.com/airmethods")
+        self.lf = Program.objects.create(name="OSF Life Flight", operator=self.op,
+                                         facebook_url="https://www.facebook.com/osflifeflight")
+        self.a = Aircraft.objects.create(tail_number="N911LF", icao_hex="a00001", status=Aircraft.CONFIRMED,
+                                         operator=self.op, program=self.lf)
+
+    def links(self):
+        return {label: (url, title) for label, url, title in lookup_links(self.a)}
+
+    def test_aircraft_then_program_then_operator_then_search(self):
+        links = self.links()
+        self.assertEqual(links["Facebook page"], ("https://www.facebook.com/osflifeflight",
+                                                  "The Facebook page set on its program"))
+        self.assertEqual(links["Instagram page"], ("https://www.instagram.com/airmethods",
+                                                   "The Instagram page set on its operator"))
+        self.a.facebook_url = "https://www.facebook.com/life1"
+        self.assertEqual(self.links()["Facebook page"][1], "The Facebook page set on this aircraft")
+        self.a.facebook_url = ""
+        self.a.program = self.a.operator = None
+        links = self.links()
+        self.assertIn("Facebook search", links)
+        self.assertEqual(links["Instagram search"][1], "Search Instagram for N911LF")
+
+    def test_short_forms_expanded_and_other_sites_refused(self):
+        from django.core.exceptions import ValidationError
+        self.a.facebook_url, self.a.instagram_url = "facebook.com/osflifeflight", "@osflifeflight"
+        self.a.full_clean()
+        self.assertEqual((self.a.facebook_url, self.a.instagram_url),
+                         ("https://facebook.com/osflifeflight", "https://www.instagram.com/osflifeflight"))
+        self.a.facebook_url = "https://m.facebook.com/osf"
+        self.a.full_clean()  # subdomains of the site are fine
+        for bad in ("https://example.com/osf", "javascript:alert(1)", "https://www.facebook.com/"):
+            self.a.facebook_url = bad
+            with self.assertRaises(ValidationError) as e:
+                self.a.full_clean()
+            self.assertIn("facebook_url", e.exception.message_dict)
+        self.a.facebook_url = ""
+        self.a.instagram_url = "https://www.facebook.com/x"  # wrong site for this field
+        with self.assertRaises(ValidationError):
+            self.a.full_clean()
+
+    def test_page_button_on_aircraft_page_and_program_admin(self):
+        admin = User.objects.create_superuser("root", password="x")
+        self.client.force_login(admin)
+        r = self.client.get(reverse("aircraft_detail", args=[self.a.pk]))
+        self.assertContains(r, 'href="https://www.facebook.com/osflifeflight" target="_blank" rel="noopener noreferrer" '
+                               'title="The Facebook page set on its program">Facebook page</a>')
+        page = self.client.get(reverse("admin:tracker_program_change", args=[self.lf.pk]))
+        self.assertContains(page, 'name="facebook_url"')
+        self.assertContains(page, 'name="instagram_url"')
+        self.assertContains(self.client.get(reverse("admin:tracker_aircraft_change", args=[self.a.pk])),
+                            'name="facebook_url"')
