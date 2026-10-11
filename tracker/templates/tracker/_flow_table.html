@@ -1,8 +1,8 @@
-{# Facility rows by month. The name (left) and Avg (right) stay put; the months and Total scroll between them. #}
-{% with tid="flows-"|add:heading|lower %}<div class="scroll flows-scroll"><table class="flows" id="{{ tid }}">
-<tr><th class="fac">{{ heading }}</th>{% for m in months %}<th class="n" title="{{ m|date:'F Y' }}">{{ m|date:"M" }}</th>{% endfor %}<th class="n">Total</th><th class="n avg" title="Average per month over {{ n_months }} month{{ n_months|pluralize }}">Avg</th></tr>
+{# Facility rows by month: name, the latest months, Avg, Total. Fits a phone without scrolling (names wrap). #}
+{% with tid="flows-"|add:heading|lower %}<table class="flows" id="{{ tid }}">
+<tr><th class="fac">{{ heading }}</th>{% for m in months %}<th class="n" title="{{ m|date:'F Y' }}">{{ m|date:"M" }}</th>{% endfor %}<th class="n avg" title="Average per month over {{ n_months }} month{{ n_months|pluralize }}">Avg</th><th class="n tot">Total</th></tr>
 {% for name, link, counts, avg, tot in rows %}
-<tr data-href="{{ link }}"{% if forloop.counter > 5 %} class="more"{% endif %}><td class="fac"><a href="{{ link }}"{% if name == "Scenes" %} class="map-link"{% endif %}>{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n"><strong>{{ tot }}</strong></td><td class="n avg">{{ avg|floatformat:1 }}</td></tr>
+<tr data-href="{{ link }}"{% if forloop.counter > 5 %} class="more"{% endif %}><td class="fac"><a href="{{ link }}"{% if name == "Scenes" %} class="map-link"{% endif %}>{{ name }}{% if name == "Scenes" %} <span aria-hidden="true">⌖</span>{% endif %}</a></td>{% for c in counts %}<td class="n">{{ c|default:"·" }}</td>{% endfor %}<td class="n avg">{{ avg|floatformat:1 }}</td><td class="n tot"><strong>{{ tot }}</strong></td></tr>
 {% empty %}<tr><td class="muted" colspan="{{ months|length|add:3 }}">{{ empty_text }}</td></tr>{% endfor %}
-</table></div>
+</table>
 {% if rows|length > 5 %}<button type="button" class="link flows-more" data-table="{{ tid }}" data-label="Show all {{ rows|length }} {{ what|default:'rows' }}">Show all {{ rows|length }} {{ what|default:"rows" }}</button>{% endif %}{% endwith %}

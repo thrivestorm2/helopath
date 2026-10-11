@@ -46,7 +46,10 @@ class PatientFlowTests(TestCase):
         self.assertContains(r, ">Avg</th>")
         self.assertContains(r, '<th class="n" title="September 2026">Sep</th>')
         self.assertContains(r, f'<tr data-href="{b_link}"><td class="fac"><a href="{b_link}">Hospital B</a>')
-        self.assertContains(r, '<table class="flows" id="flows-from">')  # name and Avg pinned; months scroll
+        self.assertContains(r, '<table class="flows" id="flows-from">')
+        self.assertNotContains(r, "flows-scroll")  # fits the page: no sideways scrolling
+        html = r.content.decode()
+        self.assertLess(html.index('<th class="n avg"'), html.index('<th class="n tot">Total</th>'))  # Avg, then Total
         self.assertContains(r, "5 visits where the direction is unknown are not counted")
         flows = self.client.get(reverse("site_detail", args=[self.a.pk]) + "?confirmed=1").context["flows"]
         self.assertEqual((flows["received"], flows["sent"]), (1, 0))

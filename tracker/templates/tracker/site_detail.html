@@ -55,8 +55,6 @@
 {% endblock %}
 {% block scripts %}
 <script>
-// Flow tables open scrolled to the newest months (the name and Avg columns stay pinned).
-document.querySelectorAll('.flows-scroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
 // Top 5 rows show; "Show all" reveals the rest.
 document.querySelectorAll('button.flows-more').forEach(b => b.addEventListener('click', () => {
   const table = document.getElementById(b.dataset.table);
