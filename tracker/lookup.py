@@ -10,20 +10,30 @@ from urllib.parse import quote, quote_plus
 from django.db.models import Q
 
 from .models import Aircraft, Leg, Program
+from .social import page_links
 
 
 def lookup_links(aircraft):
-    """[(label, url)] searches for the tail number on photo, social and registry sites."""
+    """[(label, url, title)] for the tail number on photo, social and registry sites. Facebook and Instagram open
+    the page an admin set (on the aircraft, else its program, else its operator), else a search."""
     tail = aircraft.tail_number.upper()
     n = tail[1:] if tail.startswith("N") else tail
     q = quote_plus(f'"{tail}"')
+    pages = page_links(aircraft)
+
+    def social(field, name, search):
+        if field in pages:
+            url, where = pages[field]
+            return (f"{name} page", url, f"The {name} page set on {where}")
+        return (f"{name} search", search, f"Search {name} for {tail}")
+
     return [
-        ("Google", f"https://www.google.com/search?q={q}+helicopter"),
-        ("Facebook", f"https://www.facebook.com/search/top?q={quote_plus(tail)}"),
-        ("Instagram", f"https://www.instagram.com/explore/tags/{quote(tail.lower())}/"),
-        ("JetPhotos", f"https://www.jetphotos.com/registration/{quote(tail)}"),
-        ("FlightAware", f"https://www.flightaware.com/resources/registration/{quote(tail)}"),
-        ("FAA registry", f"https://registry.faa.gov/AircraftInquiry/Search/NNumberResult?nNumberTxt={quote(n)}"),
+        ("Google", f"https://www.google.com/search?q={q}+helicopter", ""),
+        social("facebook_url", "Facebook", f"https://www.facebook.com/search/top?q={quote_plus(tail)}"),
+        social("instagram_url", "Instagram", f"https://www.instagram.com/explore/tags/{quote(tail.lower())}/"),
+        ("JetPhotos", f"https://www.jetphotos.com/registration/{quote(tail)}", ""),
+        ("FlightAware", f"https://www.flightaware.com/resources/registration/{quote(tail)}", ""),
+        ("FAA registry", f"https://registry.faa.gov/AircraftInquiry/Search/NNumberResult?nNumberTxt={quote(n)}", ""),
     ]
 
 
