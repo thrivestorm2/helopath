@@ -11,6 +11,7 @@ urlpatterns = [
     path("map/coverage.json", views.coverage_data, name="coverage_data"),
     path("sites/", views.site_list, name="site_list"),
     path("sites/place/", views.site_place, name="site_place"),
+    path("sites/faa/", views.faa_facility, name="faa_facility"),
     path("sites/<int:pk>/", views.site_detail, name="site_detail"),
     path("sites/<int:pk>/hangar/", views.set_weather_hangar, name="set_weather_hangar"),
     path("operators/<int:pk>/", views.operator_detail, name="operator_detail"),
