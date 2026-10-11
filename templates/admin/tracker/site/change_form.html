@@ -127,6 +127,48 @@
   [lat, lon].forEach(el => el.addEventListener('change', fillPlace));
   map.on('click', fillPlace);
   fillPlace();
+
+  // Typing an FAA ID fills the site from FAA data: name, type, city, state, and marks it reviewed.
+  // The location is filled only when blank (a site made from a landing spot keeps where they landed).
+  const faa = document.getElementById('id_faa_id'), reviewed = document.getElementById('id_reviewed');
+  const elev = document.getElementById('id_elevation_ft');
+  const faaNote = document.createElement('p');
+  faaNote.className = 'help';
+  faaNote.style.margin = '4px 10px';
+  (faa.closest('.form-row') || faa.parentNode).appendChild(faaNote);
+  let lastFaa = faa.value.trim().toUpperCase();
+  function lookupFaa() {
+    const code = faa.value.trim().toUpperCase();
+    if (!code || code === lastFaa) return;
+    lastFaa = code;
+    faaNote.textContent = 'Looking up ' + code + ' in FAA data…';
+    fetch('{% url "faa_facility" %}?id=' + encodeURIComponent(code), {credentials: 'same-origin'})
+      .then(r => r.json()).then(d => {
+        if (faa.value.trim().toUpperCase() !== code) return;  // typed on
+        if (!d.found) { faaNote.textContent = d.message; return; }
+        faa.value = d.faa_id;
+        name.value = d.name;
+        siteType.value = d.site_type;
+        city.value = d.city; auto.city = d.city;
+        state.value = d.state; auto.state = d.state;
+        if (reviewed) reviewed.checked = true;
+        let where = '';
+        if (!hasPoint()) {
+          lat.value = d.lat.toFixed(6); lon.value = d.lon.toFixed(6);
+          if (elev && (elev.value === '' || elev.value === '0')) elev.value = Math.round(d.elevation_ft);
+          rad.value = d.radius_m;
+          draw(); fitCircle(true);
+        } else {
+          const m = map.distance([parseFloat(lat.value), parseFloat(lon.value)], [d.lat, d.lon]);
+          where = ` The FAA location is ${Math.round(m).toLocaleString()} m from the one set here (kept).`;
+        }
+        picks.textContent = '';
+        note.textContent = '';  // the FAA data replaces any OpenStreetMap suggestions or errors
+        faaNote.textContent = `Filled from FAA data: ${d.name}, ${d.city}, ${d.state}. Marked reviewed.` + where;
+      }).catch(() => { faaNote.textContent = 'FAA look-up failed; try again.'; lastFaa = ''; });
+  }
+  faa.addEventListener('change', lookupFaa);
+  faa.addEventListener('input', () => { clearTimeout(faa._t); faa._t = setTimeout(lookupFaa, 600); });
 })();
 </script>
 {% endblock %}

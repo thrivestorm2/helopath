@@ -28,6 +28,7 @@ from .models import (
     PlaceSuggestion,
     Aircraft,
     CoverageCell,
+    FaaFacility,
     DismissedClusterMemory,
     IngestRun,
     LandingCluster,
@@ -1014,6 +1015,31 @@ def _spot_markers(request):
                     "lon": round(c.lon, 5), "url": c.create_url if admin else None, "info": info,
                     "link": "Add as site →"})
     return out
+
+
+def find_faa_facility(code):
+    """FaaFacility for an FAA ID as typed: case-insensitive; 'KPIA' style ICAO codes also match 'PIA'."""
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+    hit = FaaFacility.objects.filter(faa_id=code).first()
+    if hit is None and len(code) == 4 and code[0] in "KP":
+        hit = FaaFacility.objects.filter(faa_id=code[1:]).first()
+    return hit
+
+
+@admin_required
+def faa_facility(request):
+    """Site form: details for a typed FAA ID, from the FAA airport/heliport data."""
+    f = find_faa_facility(request.GET.get("id"))
+    if f is None:
+        loaded = FaaFacility.objects.exists()
+        return JsonResponse({"found": False, "message": "No FAA facility with that ID." if loaded else
+                             "FAA data is not loaded yet: run Seed FAA sites on the Operations page."})
+    from .seed import default_radius
+    return JsonResponse({"found": True, "faa_id": f.faa_id, "name": f.name, "site_type": f.site_type,
+                         "city": f.city, "state": f.state, "lat": f.lat, "lon": f.lon,
+                         "elevation_ft": f.elevation_ft, "radius_m": default_radius(f.site_type)})
 
 
 @admin_required

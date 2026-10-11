@@ -86,6 +86,27 @@ class Site(models.Model):
         return f"{self.name} ({self.faa_id})" if self.faa_id else self.name
 
 
+class FaaFacility(models.Model):
+    """FAA NASR airport/heliport row, nationwide, kept so typing an FAA ID on a site can fill it in.
+    Replaced each time FAA sites are seeded (Operations page)."""
+
+    faa_id = models.CharField("FAA ID", max_length=10, unique=True)
+    name = models.CharField(max_length=200)
+    site_type = models.CharField(max_length=20)
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=2, blank=True)
+    lat = models.FloatField()
+    lon = models.FloatField()
+    elevation_ft = models.FloatField(default=0)
+    facility_use = models.CharField(max_length=10, blank=True)
+
+    class Meta:
+        verbose_name_plural = "FAA facilities"
+
+    def __str__(self):
+        return f"{self.faa_id} {self.name}"
+
+
 class RegistryAircraft(models.Model):
     """FAA releasable registry row. Internal only: never shown in the UI (guardrail 8)."""
 
