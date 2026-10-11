@@ -770,10 +770,11 @@ def review_rules(request):
 def cluster_queue(request):
     from django.conf import settings as dj_settings
 
-    clusters = list(LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site"))
+    clusters = _open_clusters()  # most landings first
     busy = dj_settings.PLACE_LOOKUP_MIN_LANDINGS
     _add_site_links(clusters)
-    return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy})
+    return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy,
+                                                          "recent_days": dj_settings.SPOT_MAP_DAYS})
 
 
 def _cluster_add_site_url(c, name, city="", state="", site_type=Site.BASE, next_url=None):
@@ -964,18 +965,13 @@ def site_map(request):
     })
 
 
-def _short_date(d):
-    return f"{d:%b} {d.day}, {d.year}"
-
-
-def _spot_markers(request):
-    """Repeat landing spots that are not sites yet (the Cluster queue), for the map's "Unadded spots" layer.
-    Admins get a link to the new-site form pre-filled for the spot, returning to the map after saving."""
+def _open_clusters():
+    """Undismissed clusters not yet covered by an active site (one added since the last refresh), each with
+    `recent_landings`: landings away from sites in the last SPOT_MAP_DAYS days, counted for the nearest
+    cluster within the cluster radius (as the clusters were built). Most landings first."""
     sites = SiteIndex(Site.objects.filter(is_active=True))
     clusters = [c for c in LandingCluster.objects.filter(source=SOURCE, dismissed=False).select_related("nearest_site")
-                if not any(d <= s.radius_m for d, s in sites.within(c.lat, c.lon, 2000))]  # added since last refresh
-    # Only spots used at least SPOT_MAP_MIN_LANDINGS times in the last SPOT_MAP_DAYS days: each recent landing
-    # away from sites counts for the nearest spot within the cluster radius (as the clusters were built).
+                if not any(d <= s.radius_m for d, s in sites.within(c.lat, c.lon, 2000))]
     recent = Counter()
     index = SiteIndex(clusters)
     for lat, lon in Leg.objects.filter(
@@ -986,7 +982,18 @@ def _spot_markers(request):
             recent[near[0][1].pk] += 1
     for c in clusters:
         c.recent_landings = recent[c.pk]
-    clusters = [c for c in clusters if c.recent_landings >= settings.SPOT_MAP_MIN_LANDINGS]
+    clusters.sort(key=lambda c: (-c.landing_count, -c.recent_landings, -c.last_seen.timestamp(), c.pk))
+    return clusters
+
+
+def _short_date(d):
+    return f"{d:%b} {d.day}, {d.year}"
+
+
+def _spot_markers(request):
+    """Repeat landing spots that are not sites yet (the Cluster queue), for the map's "Unadded spots" layer.
+    Admins get a link to the new-site form pre-filled for the spot, returning to the map after saving."""
+    clusters = [c for c in _open_clusters() if c.recent_landings >= settings.SPOT_MAP_MIN_LANDINGS]
     admin = is_admin(request.user)
     if admin:
         _add_site_links(clusters, next_url=request.get_full_path())
@@ -1007,6 +1014,20 @@ def _spot_markers(request):
                     "lon": round(c.lon, 5), "url": c.create_url if admin else None, "info": info,
                     "link": "Add as site →"})
     return out
+
+
+@admin_required
+def site_place(request):
+    """City and state for a point, for the site form (fills them when the location is set)."""
+    try:
+        lat, lon = float(request.GET["lat"]), float(request.GET["lon"])
+    except (KeyError, ValueError):
+        return JsonResponse({"error": "lat and lon are required"}, status=400)
+    try:
+        city, state = places.place_for_point(lat, lon)
+    except Exception:
+        return JsonResponse({"city": "", "state": "", "error": "lookup failed"})
+    return JsonResponse({"city": city, "state": state, "error": ""})
 
 
 def coverage_data(request):

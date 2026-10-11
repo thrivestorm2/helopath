@@ -1,10 +1,10 @@
 {% extends "tracker/base.html" %}
 {% block content %}
 <h1>Cluster queue</h1>
-<p class="muted">Repeated landings by discovered or confirmed aircraft that match no site (clustered at 150 m). Often a base, a hospital missing from the table, or a hospital with bad coordinates.
+<p class="muted">Repeated landings by discovered or confirmed aircraft that match no site (clustered at 150 m). Often a base, a hospital missing from the table, or a hospital with bad coordinates. Most landings first.
 For clusters with more than {{ lookup_min }} landings, named hospitals and helipads nearby are looked up on OpenStreetMap and suggested; <em>Create site</em> fills in the suggested name, city and state as a hospital helipad (<em>Use</em> picks another nearby match). Always check it on the map.</p>
 <div class="scroll"><table class="stack">
-<tr class="head"><th>Location</th><th>Suggested name</th><th class="n">Landings</th><th class="n">Aircraft</th><th>First / last</th><th>Nearest site</th><th></th></tr>
+<tr class="head"><th>Location</th><th>Suggested name</th><th class="n">Landings ▼</th><th class="n">Last {{ recent_days }} days</th><th class="n">Aircraft</th><th>First / last</th><th>Nearest site</th><th></th></tr>
 {% for c in clusters %}
 <tr id="c{{ c.pk }}">
   <td class="lead"><a href="https://www.openstreetmap.org/?mlat={{ c.lat|stringformat:'.5f' }}&mlon={{ c.lon|stringformat:'.5f' }}#map=17/{{ c.lat|stringformat:'.5f' }}/{{ c.lon|stringformat:'.5f' }}" target="_blank" rel="noopener"><code>{{ c.lat|floatformat:5 }}, {{ c.lon|floatformat:5 }}</code></a></td>
@@ -16,7 +16,7 @@ For clusters with more than {{ lookup_min }} landings, named hospitals and helip
     {% elif c.suggestion %}<span class="muted">No named hospital or helipad within 500 m</span>
     {% elif c.lookup_wanted %}<span class="muted">Looking up nearby hospitals…</span>
     {% endif %}</div></td>
-  <td class="n" data-label="Landings">{{ c.landing_count }}</td><td class="n" data-label="Aircraft">{{ c.distinct_aircraft }}</td>
+  <td class="n" data-label="Landings">{{ c.landing_count }}</td><td class="n" data-label="Last {{ recent_days }} days">{{ c.recent_landings }}</td><td class="n" data-label="Aircraft">{{ c.distinct_aircraft }}</td>
   <td data-label="First / last">{{ c.first_seen|date:"Y-m-d" }} / {{ c.last_seen|date:"Y-m-d" }}</td>
   <td data-label="Nearest site">{% if c.nearest_site %}{{ c.nearest_site.name }} ({{ c.nearest_site_distance_m|floatformat:0 }} m){% else %}—{% endif %}</td>
   <td style="white-space:nowrap">
@@ -24,7 +24,7 @@ For clusters with more than {{ lookup_min }} landings, named hospitals and helip
     <form method="post" action="{% url 'cluster_dismiss' c.pk %}" style="display:inline">{% csrf_token %}<button>Dismiss</button></form>
   </td>
 </tr>
-{% empty %}<tr><td colspan="7" class="muted empty-row">No open clusters.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="8" class="muted empty-row">No open clusters.</td></tr>{% endfor %}
 </table></div>
 <p class="muted">Place names © OpenStreetMap contributors (ODbL).</p>
 {% endblock %}
