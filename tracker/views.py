@@ -237,7 +237,7 @@ def _with_patient_counts(request, qs):
                        sent=total("origin_site", label="interfacility"))
 
 
-def patient_flows(request, site, limit=25, show_months=6):
+def patient_flows(request, site, limit=25, show_months=3):
     """Inferred patients received at and sent from a site, per hospital on the other end (scenes are one row of the
     received table): the latest `show_months` months, the monthly average and the total over all months with data.
     Rows rank by total."""
@@ -312,9 +312,12 @@ def site_detail(request, pk):
     rows = []
     for (op_id, name), c in sorted(table.items(), key=lambda kv: (kv[0][0] is None, kv[0][1])):
         rows.append((op_id, name, operator_link(request, op_id, site), [c[m] for m in months], sum(c.values())))
+    based = list(based_aircraft(site).filter(status__in=_statuses(request))
+                 .select_related("operator", "program").order_by(Aircraft.sort_name()))
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
         "flows": patient_flows(request, site), "site": site, "months": months, "rows": rows, "n_based": n_based,
+        "based": based,
         # Once a hangar is set the header just names it; changing it is done on the admin Edit page.
         "hangar_suggestion": next(iter(suggest_hangars(site, SOURCE, limit=1)), None)
         if n_based and not site.weather_hangar_id else None,
