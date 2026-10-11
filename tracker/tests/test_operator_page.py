@@ -80,8 +80,8 @@ class OperatorPageTests(TestCase):
         r = self.client.get(reverse("site_detail", args=[self.hosp_a.pk]))
         op_url = reverse("operator_detail", args=[self.op.pk])
         none_url = reverse("aircraft_list") + f"?operator=none&amp;site={self.hosp_a.pk}"
-        self.assertContains(r, f'<tr data-href="{op_url}"><td><a href="{op_url}">Air Evac Lifeteam</a>')
-        self.assertContains(r, f'<tr data-href="{none_url}"><td><a href="{none_url}">(unassigned)</a>')
+        self.assertContains(r, f'<a href="{op_url}">Air Evac Lifeteam</a>')
+        self.assertContains(r, f'<a href="{none_url}">(unassigned)</a>')
         body = r.content.decode()
         self.assertLess(body.index("Air Evac Lifeteam"), body.index("(unassigned)"))  # unassigned last
         self.assertContains(r, "map.fitBounds(ring.getBounds()")  # whole radius in view
@@ -97,6 +97,34 @@ class OperatorPageTests(TestCase):
         self.assertContains(r, "N55UA")
         self.assertContains(r, "N412AE")
         self.assertEqual(self.client.get(reverse("aircraft_list") + "?site=999").status_code, 404)
+
+    def test_site_page_lists_each_operators_aircraft_that_landed_there(self):
+        from tracker.models import Program
+        prog = Program.objects.create(name="Air Evac 12", operator=self.op)
+        b = Aircraft.objects.create(tail_number="N413AE", icao_hex="a4f2c2", status=Aircraft.DISCOVERED,
+                                    operator=self.op, call_sign="AE12", program=prog)
+        elsewhere = Aircraft.objects.create(tail_number="N414AE", icao_hex="a4f2c3", status=Aircraft.CONFIRMED,
+                                            operator=self.op)
+        aug, sep = datetime(2026, 8, 3, 15, tzinfo=timezone.utc), datetime(2026, 9, 3, 15, tzinfo=timezone.utc)
+        for a, ts, site in ((self.a, aug, self.hosp_a), (self.a, sep, self.hosp_a), (b, sep, self.hosp_a),
+                            (b, sep, self.hosp_a), (b, aug, self.hosp_a), (elsewhere, sep, self.hosp_b)):
+            Leg.objects.create(hex=a.icao_hex, aircraft=a, source="adsblol", start_ts=ts, end_ts=ts, start_lat=40,
+                               start_lon=-89, end_lat=site.lat, end_lon=site.lon, end_site=site,
+                               end_state="landed_observed")
+        r = self.client.get(reverse("site_detail", args=[self.hosp_a.pk]))
+        (op_id, name, _, counts, tot, planes), = r.context["rows"]
+        self.assertEqual((name, counts, tot), ("Air Evac Lifeteam", [2, 3], 5))
+        # Busiest first, same month columns, adding up to the operator row; the one that never landed here is absent.
+        self.assertEqual([(a.tail_number, c, t) for a, _, c, t in planes], [("N413AE", [1, 2], 3), ("N412AE", [1, 1], 2)])
+        b_url = reverse("aircraft_detail", args=[b.pk])
+        self.assertContains(r, f'<tr class="op-aircraft" data-op="1" data-href="{b_url}" hidden><td><a href="{b_url}">'
+                               f'AE12 <span class="muted">(N413AE)</span></a> <span class="muted">· Air Evac 12</span>')
+        self.assertContains(r, 'class="link op-toggle" aria-expanded="false"')
+        self.assertNotContains(r, "N414AE")
+        # Confirmed only: the discovered aircraft drops out of the operator row and its list.
+        r = self.client.get(reverse("site_detail", args=[self.hosp_a.pk]) + "?confirmed=1")
+        (_, _, _, counts, tot, planes), = r.context["rows"]
+        self.assertEqual((counts, tot, [a.tail_number for a, *_ in planes]), ([1, 1], 2, ["N412AE"]))
 
     def test_unassigned_aircraft_filter(self):
         Aircraft.objects.create(tail_number="N55UA", icao_hex="a00055", status=Aircraft.DISCOVERED)

@@ -340,12 +340,23 @@ def site_detail(request, pk):
     site = get_object_or_404(Site, pk=pk)
     arrivals = Leg.objects.filter(source=SOURCE, end_site=site, aircraft__status__in=_statuses(request))
     table = defaultdict(Counter)  # (operator pk or None, name) -> month -> arrivals
-    for op_id, op, ts in arrivals.values_list("aircraft__operator_id", "aircraft__operator__name", "end_ts"):
-        table[(op_id, op or "(unassigned)")][local_day(ts).strftime("%Y-%m")] += 1
+    by_aircraft = defaultdict(lambda: defaultdict(Counter))  # operator key -> aircraft pk -> month -> arrivals
+    for op_id, op, a_id, ts in arrivals.values_list("aircraft__operator_id", "aircraft__operator__name",
+                                                     "aircraft_id", "end_ts"):
+        month = local_day(ts).strftime("%Y-%m")
+        table[(op_id, op or "(unassigned)")][month] += 1
+        by_aircraft[(op_id, op or "(unassigned)")][a_id][month] += 1
     months = sorted({m for c in table.values() for m in c})
+    planes = Aircraft.objects.select_related("program").in_bulk(
+        {a_id for per_op in by_aircraft.values() for a_id in per_op})
     rows = []
-    for (op_id, name), c in sorted(table.items(), key=lambda kv: (kv[0][0] is None, kv[0][1])):
-        rows.append((op_id, name, operator_link(request, op_id, site), [c[m] for m in months], sum(c.values())))
+    for key, c in sorted(table.items(), key=lambda kv: (kv[0][0] is None, kv[0][1])):
+        # The operator's aircraft that landed here, busiest first: same month columns, adding up to the operator row.
+        aircraft_rows = sorted(((planes[a_id], reverse("aircraft_detail", args=[a_id]), [ac[m] for m in months],
+                                 sum(ac.values())) for a_id, ac in by_aircraft[key].items()),
+                               key=lambda r: (-r[3], r[0].tail_number))
+        rows.append((key[0], key[1], operator_link(request, key[0], site), [c[m] for m in months], sum(c.values()),
+                     aircraft_rows))
     based = list(based_aircraft(site).filter(status__in=_statuses(request))
                  .select_related("operator", "program").order_by(Aircraft.sort_name()))
     n_based = based_aircraft(site).count()

@@ -48,12 +48,24 @@
 <h2>Arrivals by operator and month ({{ total }} total)</h2>
 <div class="scroll"><table>
 <tr><th>Operator</th>{% for m in months %}<th class="n">{{ m }}</th>{% endfor %}<th class="n">Total</th></tr>
-{% for op_id, name, link, counts, tot in rows %}<tr data-href="{{ link }}"><td><a href="{{ link }}">{{ name }}</a></td>{% for c in counts %}<td class="n">{{ c }}</td>{% endfor %}<td class="n">{{ tot }}</td></tr>
-{% empty %}<tr><td class="muted">No resolved arrivals at this site.</td></tr>{% endfor %}
+{% for op_id, name, link, counts, tot, aircraft_rows in rows %}<tr class="op-row" data-op="{{ forloop.counter }}"><td><button type="button" class="link op-toggle" aria-expanded="false" title="Show this operator's aircraft that landed here">&#9656;</button> <a href="{{ link }}">{{ name }}</a></td>{% for c in counts %}<td class="n">{{ c }}</td>{% endfor %}<td class="n">{{ tot }}</td></tr>
+{% for a, a_link, a_counts, a_tot in aircraft_rows %}<tr class="op-aircraft" data-op="{{ forloop.parentloop.counter }}" data-href="{{ a_link }}" hidden><td><a href="{{ a_link }}">{% if a.call_sign %}{{ a.call_sign }} <span class="muted">({{ a.tail_number }})</span>{% else %}{{ a.tail_number }}{% endif %}</a>{% if a.program %} <span class="muted">· {{ a.program.name }}</span>{% endif %}</td>{% for c in a_counts %}<td class="n">{{ c }}</td>{% endfor %}<td class="n">{{ a_tot }}</td></tr>
+{% endfor %}{% empty %}<tr><td class="muted">No resolved arrivals at this site.</td></tr>{% endfor %}
 </table></div>
 <div id="map" class="card" style="padding:0;margin-top:14px;height:360px"></div>
 {% endblock %}
 {% block scripts %}
+<script>
+// Arrivals by operator: tap an operator row (or its arrow) to list its aircraft that landed here.
+document.querySelectorAll('tr.op-row').forEach(row => row.addEventListener('click', e => {
+  if (e.target.closest('a')) return;  // the operator name still opens its page
+  const btn = row.querySelector('.op-toggle');
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', open);
+  btn.innerHTML = open ? '&#9662;' : '&#9656;';
+  document.querySelectorAll(`tr.op-aircraft[data-op="${row.dataset.op}"]`).forEach(r => { r.hidden = !open; });
+}));
+</script>
 <script>
 // Top 5 rows show; "Show all" reveals the rest.
 document.querySelectorAll('button.flows-more').forEach(b => b.addEventListener('click', () => {

@@ -194,3 +194,8 @@ h1 .faa-id { font-weight: 400; }
 .social-icon svg { width:18px; height:18px; }
 .social-icon.social-facebook { background:#1877f2; }
 .social-icon.social-instagram { background:linear-gradient(45deg,#f58529,#dd2a7b 50%,#8134af); }
+tr.op-row { cursor:pointer; }
+tr.op-row:hover td { background:#eef2f8; }
+.op-toggle { width:1.2em; padding:0; text-decoration:none; }
+tr.op-aircraft td:first-child { padding-left:2em; }
+tr.op-aircraft td { font-size:.92em; background:#fafbfd; }
