@@ -6,6 +6,7 @@ contributors (ODbL).
 """
 import json
 import logging
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import timedelta
@@ -69,8 +70,13 @@ def place_for_point(lat, lon, fetch=None):
     s = cached(lat, lon)
     if s is not None and not s.error and (s.city or s.state):
         return s.city, s.state
-    data = (fetch or fetch_overpass)(city_state_query(lat, lon))
-    return containing_place(data.get("elements", []))
+    try:
+        data = (fetch or fetch_overpass)(city_state_query(lat, lon))
+        return containing_place(data.get("elements", []))
+    except Exception:
+        if fetch is not None:  # tests pass their own fetch; do not reach the network
+            raise
+        return fetch_nominatim_place(lat, lon)
 
 
 # Kinds offered as site names on the new-site form, most likely first.
@@ -153,11 +159,50 @@ def containing_place(elements):
     return city, state
 
 
-def fetch_overpass(query):
+# The main Overpass server is often busy (HTTP 429/504); public mirrors serve the same data.
+OVERPASS_URLS = [OVERPASS_URL, "https://overpass.kumi.systems/api/interpreter",
+                 "https://overpass.private.coffee/api/interpreter"]
+OVERPASS_TIMEOUT_S = 15  # per server, so trying all of them stays inside the web request timeout
+
+
+class LookupError_(Exception):
+    """Every OpenStreetMap server failed; the message says why, for the person waiting on it."""
+
+
+def _reason(e):
+    if isinstance(e, urllib.error.HTTPError):
+        return {429: "busy (rate limited)", 504: "timed out", 503: "unavailable"}.get(e.code, f"HTTP {e.code}")
+    if isinstance(e, TimeoutError) or "timed out" in str(e):
+        return "timed out"
+    return str(getattr(e, "reason", e))[:80]
+
+
+def fetch_overpass(query, urls=None, opener=urllib.request.urlopen):
+    """POST an Overpass query, trying each server in turn. Raises LookupError_ if all fail."""
     body = urllib.parse.urlencode({"data": query}).encode()
-    req = urllib.request.Request(OVERPASS_URL, data=body, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    reasons = []
+    for url in urls or OVERPASS_URLS:
+        req = urllib.request.Request(url, data=body, headers={"User-Agent": USER_AGENT})
+        try:
+            with opener(req, timeout=OVERPASS_TIMEOUT_S) as r:
+                return json.loads(r.read())
+        except Exception as e:  # try the next server
+            reasons.append(f"{urllib.parse.urlparse(url).hostname}: {_reason(e)}")
+    raise LookupError_("OpenStreetMap lookup failed (" + "; ".join(reasons) + ")")
+
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+
+
+def fetch_nominatim_place(lat, lon, opener=urllib.request.urlopen):
+    """(city, state code) from Nominatim reverse geocoding: a second source when Overpass is down."""
+    url = NOMINATIM_URL + "?" + urllib.parse.urlencode(
+        {"format": "jsonv2", "lat": f"{lat:.6f}", "lon": f"{lon:.6f}", "zoom": 10, "addressdetails": 1})
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with opener(req, timeout=10) as r:
+        address = json.loads(r.read()).get("address") or {}
+    city = address.get("city") or address.get("town") or address.get("village") or address.get("municipality") or ""
+    return city[:100], state_code(address.get("ISO3166-2-lvl4") or address.get("state"))
 
 
 def rank(elements, lat, lon):
