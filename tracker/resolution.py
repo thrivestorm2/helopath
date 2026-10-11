@@ -10,11 +10,13 @@ from django.conf import settings
 from .geo import SiteIndex, haversine_m
 from .models import Aircraft, LandingCluster, Leg, Site
 
-NEAR_MISS_M = 2000          # a landing this close to a site, but outside its radius, may just need a wider radius
+NEAR_MISS_M = 2000          # a landing this close to a site (3 km for airports), but outside its radius, may just
+                            # need a wider radius
 HIGH_AGL_FT = 1500          # signal lost above this height is a coverage gap en route, not an approach
 DEFAULT_GROUND_FT = 650     # ground elevation when no site is near (central Illinois)
 MIN_CLUSTER_LANDINGS = 3    # a landing spot used this often probably deserves a site
-MAX_SUGGESTED_RADIUS_M = 2000
+MAX_SUGGESTED_RADIUS_M = 2000          # hospitals, bases and others
+MAX_SUGGESTED_RADIUS_AIRPORT_M = 3000  # airports are big
 
 # (key, title, what it means, fixable here)
 BUCKETS = [
@@ -122,7 +124,8 @@ def diagnose(legs, source):
     bases = _point_bases()
     for pk, state, end_ts, lat, lon, alt, aircraft_id, operator_id in legs.filter(end_site__isnull=True).values_list(
             "pk", "end_state", "end_ts", "end_lat", "end_lon", "end_alt_ft", "aircraft_id", "aircraft__operator_id"):
-        near = sites.within(lat, lon, NEAR_MISS_M)
+        near = [(dist, s) for dist, s in sites.within(lat, lon, MAX_SUGGESTED_RADIUS_AIRPORT_M)
+                if dist <= (MAX_SUGGESTED_RADIUS_AIRPORT_M if s.site_type == Site.AIRPORT else NEAR_MISS_M)]
         nearest = near[0] if near else next(iter(sites.within(lat, lon, NEAREST_SEARCH_M)), None)
         ground = near[0][1].elevation_ft if near and near[0][1].elevation_ft else DEFAULT_GROUND_FT
         base = bases.get(aircraft_id)
@@ -173,6 +176,7 @@ def category_metrics(d):
 
 
 def radius_suggestions(d, sites_index=None, min_legs=2, limit=25):
+    # (limit=None: all of them)
     """[(site, legs just outside, suggested radius, nearest other site distance)] busiest first.
 
     The suggestion covers 80% of the near misses, rounded up to 50 m, but stops short of half the distance to
@@ -184,11 +188,63 @@ def radius_suggestions(d, sites_index=None, min_legs=2, limit=25):
             continue
         distances.sort()
         p80 = distances[min(len(distances) - 1, math.ceil(0.8 * len(distances)) - 1)]
-        suggested = min(MAX_SUGGESTED_RADIUS_M, int(math.ceil(p80 / 50.0) * 50) + 50)
-        neighbours = [dist for dist, s in index.within(site.lat, site.lon, 2 * MAX_SUGGESTED_RADIUS_M) if s.pk != site.pk]
+        cap = MAX_SUGGESTED_RADIUS_AIRPORT_M if site.site_type == Site.AIRPORT else MAX_SUGGESTED_RADIUS_M
+        suggested = min(cap, int(math.ceil(p80 / 50.0) * 50) + 50)
+        neighbours = [dist for dist, s in index.within(site.lat, site.lon, 2 * cap) if s.pk != site.pk]
         nearest = neighbours[0] if neighbours else None
         if nearest is not None:
             suggested = min(suggested, int(nearest / 2 // 50 * 50))
         if suggested > site.radius_m:
             out.append((site, len(distances), suggested, nearest))
     return sorted(out, key=lambda r: (-r[1], r[0].name))[:limit]
+
+
+def auto_radius_ok(site, suggested, nearest):
+    """Widen automatically only when the suggestion stays small for the site type and below half the distance
+    to the nearest other site (so it cannot start taking that site's landings)."""
+    cap = settings.AUTO_RADIUS_MAX_AIRPORT_M if site.site_type == Site.AIRPORT else settings.AUTO_RADIUS_MAX_M
+    return suggested <= cap and (nearest is None or suggested < nearest / 2)
+
+
+def auto_expand_radii(source, days=90):
+    """Widen the radius of sites with repeated landings just outside it, within auto_radius_ok's limits.
+    Re-derives the legs of aircraft that landed in the newly covered ring so they count at once.
+    Returns [(site, old radius, new radius, legs just outside)]."""
+    from datetime import timedelta
+
+    from django.contrib.admin.models import CHANGE, LogEntry
+    from django.contrib.auth import get_user_model
+    from django.utils import timezone
+
+    from .inference.pipeline import build_legs
+    from . import rawstore
+
+    if source != settings.PRIMARY_SOURCE:
+        return []
+    legs = Leg.objects.filter(source=source, aircraft__status__in=Aircraft.VISIBLE,
+                              start_ts__gte=timezone.now() - timedelta(days=days))
+    changes = []
+    for site, n, suggested, nearest in radius_suggestions(diagnose(legs, source), limit=None):
+        if not auto_radius_ok(site, suggested, nearest):
+            continue
+        old = site.radius_m
+        note = (f"Radius widened automatically from {old} m to {suggested} m: {n} landings just outside"
+                + (f"; nearest other site {nearest:,.0f} m away." if nearest is not None else "."))
+        site.radius_m = suggested
+        site.notes = (site.notes + "\n" if site.notes else "") + note
+        site.save(update_fields=["radius_m", "notes", "updated"])
+        changes.append((site, old, suggested, n))
+    if not changes:
+        return []
+    owner = get_user_model().objects.filter(is_superuser=True).order_by("pk").first()
+    if owner:
+        for site, old, new, n in changes:
+            LogEntry.objects.log_actions(user_id=owner.pk, queryset=[site], action_flag=CHANGE, single_object=True,
+                                         change_message=f"Radius widened automatically {old} m -> {new} m "
+                                                        f"({n} landings just outside)")
+    # Aircraft with unresolved landings now inside a widened radius: re-derive their legs.
+    hexes = {h for h, lat, lon in Leg.objects.filter(source=source, end_site__isnull=True)
+             .values_list("hex", "end_lat", "end_lon")
+             if any(haversine_m(s.lat, s.lon, lat, lon) <= new for s, _, new, _ in changes)}
+    build_legs(source, hexes & rawstore.hexes(source))
+    return changes

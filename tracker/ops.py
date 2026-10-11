@@ -49,6 +49,9 @@ def run_task(task: OpsTask):
         elif task.kind == OpsTask.REFRESH:
             src = settings.PRIMARY_SOURCE
             log(f"auto-confirmed {apply_auto_confirm_rules()} aircraft by rule")
+            from .resolution import auto_expand_radii
+            for site, old, new, n in auto_expand_radii(src):
+                log(f"widened {site.name}: {old} m -> {new} m ({n} landings just outside)")
             log(f"clusters {pipeline.build_clusters(src)}, missions {pipeline.build_missions(src)}, "
                 f"aggregates {pipeline.build_aggregates(src)}, coverage cells {pipeline.build_coverage(src)}")
         task.status = OpsTask.OK
