@@ -102,10 +102,8 @@ class LookupTests(TestCase):
 
 class SocialPageTests(TestCase):
     def setUp(self):
-        self.op = Operator.objects.create(name="Air Methods", facebook_url="https://www.facebook.com/airmethods",
-                                          instagram_url="https://www.instagram.com/airmethods")
-        self.lf = Program.objects.create(name="OSF Life Flight", operator=self.op,
-                                         facebook_url="https://www.facebook.com/osflifeflight")
+        self.op = Operator.objects.create(name="Air Methods", facebook="airmethods", instagram="airmethods")
+        self.lf = Program.objects.create(name="OSF Life Flight", operator=self.op, facebook="osflifeflight")
         self.a = Aircraft.objects.create(tail_number="N911LF", icao_hex="a00001", status=Aircraft.CONFIRMED,
                                          operator=self.op, program=self.lf)
 
@@ -116,42 +114,70 @@ class SocialPageTests(TestCase):
         links = self.links()
         self.assertEqual(links["Facebook page"], ("https://www.facebook.com/osflifeflight",
                                                   "The Facebook page set on its program"))
-        self.assertEqual(links["Instagram page"], ("https://www.instagram.com/airmethods",
+        self.assertEqual(links["Instagram page"], ("https://www.instagram.com/airmethods/",
                                                    "The Instagram page set on its operator"))
-        self.a.facebook_url = "https://www.facebook.com/life1"
+        self.a.facebook = "life1"
         self.assertEqual(self.links()["Facebook page"][1], "The Facebook page set on this aircraft")
-        self.a.facebook_url = ""
+        self.a.facebook = ""
         self.a.program = self.a.operator = None
         links = self.links()
         self.assertIn("Facebook search", links)
         self.assertEqual(links["Instagram search"][1], "Search Instagram for N911LF")
 
-    def test_short_forms_expanded_and_other_sites_refused(self):
-        from django.core.exceptions import ValidationError
-        self.a.facebook_url, self.a.instagram_url = "facebook.com/osflifeflight", "@osflifeflight"
+    def test_whatever_is_typed_is_stored_as_the_username(self):
+        from tracker.social import normalize
+        for typed in ("https://www.facebook.com/osflifeflight/", "https://m.facebook.com/osflifeflight?ref=page",
+                      "facebook.com/osflifeflight", "www.facebook.com/osflifeflight/about", "@osflifeflight",
+                      "osflifeflight", " fb.com/osflifeflight "):
+            self.assertEqual(normalize("facebook", typed), "osflifeflight", typed)
+        for typed in ("https://www.instagram.com/osf.lifeflight/", "instagram.com/osf.lifeflight?hl=en",
+                      "@osf.lifeflight", "osf.lifeflight"):
+            self.assertEqual(normalize("instagram", typed), "osf.lifeflight", typed)
+        self.assertEqual(normalize("facebook", "https://www.facebook.com/profile.php?id=100012345"), "id:100012345")
+        self.assertEqual(normalize("facebook", "facebook.com/pages/OSF-Life-Flight/987654"), "id:987654")
+        self.a.facebook, self.a.instagram = "https://www.facebook.com/life1/", "@life_1"
         self.a.full_clean()
-        self.assertEqual((self.a.facebook_url, self.a.instagram_url),
-                         ("https://facebook.com/osflifeflight", "https://www.instagram.com/osflifeflight"))
-        self.a.facebook_url = "https://m.facebook.com/osf"
-        self.a.full_clean()  # subdomains of the site are fine
-        for bad in ("https://example.com/osf", "javascript:alert(1)", "https://www.facebook.com/"):
-            self.a.facebook_url = bad
-            with self.assertRaises(ValidationError) as e:
-                self.a.full_clean()
-            self.assertIn("facebook_url", e.exception.message_dict)
-        self.a.facebook_url = ""
-        self.a.instagram_url = "https://www.facebook.com/x"  # wrong site for this field
-        with self.assertRaises(ValidationError):
-            self.a.full_clean()
+        self.assertEqual((self.a.facebook, self.a.instagram), ("life1", "life_1"))
 
-    def test_page_button_on_aircraft_page_and_program_admin(self):
+    def test_links_are_built_from_one_pattern_per_site(self):
+        from tracker.social import page_url
+        self.assertEqual(page_url("facebook", "osflifeflight"), "https://www.facebook.com/osflifeflight")
+        self.assertEqual(page_url("facebook", "id:100012345"), "https://www.facebook.com/profile.php?id=100012345")
+        self.assertEqual(page_url("instagram", "osflifeflight"), "https://www.instagram.com/osflifeflight/")
+
+    def test_other_sites_and_non_pages_refused(self):
+        from django.core.exceptions import ValidationError
+        for field, bad in (("facebook", "https://example.com/osf"), ("facebook", "javascript:alert(1)"),
+                           ("facebook", "https://www.facebook.com/"), ("facebook", "facebook.com/search?q=osf"),
+                           ("facebook", "facebook.com/groups/osf"), ("facebook", "osf life flight"),
+                           ("instagram", "https://www.facebook.com/osf"), ("instagram", "instagram.com/p/AbC123")):
+            setattr(self.a, field, bad)
+            with self.assertRaises(ValidationError, msg=bad) as e:
+                self.a.full_clean()
+            self.assertIn(field, e.exception.message_dict)
+            setattr(self.a, field, "")
+
+    def test_saved_links_converted_by_the_migration(self):
+        from importlib import import_module
+
+        from django.apps import apps
+        Program.objects.filter(pk=self.lf.pk).update(facebook="https://www.facebook.com/osflifeflight/",
+                                                     instagram="https://www.instagram.com/osflifeflight?hl=en")
+        Operator.objects.filter(pk=self.op.pk).update(facebook="https://example.com/not-facebook")
+        import_module("tracker.migrations.0026_social_usernames").to_usernames(apps, None)
+        self.lf.refresh_from_db()
+        self.op.refresh_from_db()
+        self.assertEqual((self.lf.facebook, self.lf.instagram), ("osflifeflight", "osflifeflight"))
+        self.assertEqual((self.op.facebook, self.op.instagram), ("", "airmethods"))
+
+    def test_page_button_on_aircraft_page_and_admin_fields(self):
         admin = User.objects.create_superuser("root", password="x")
         self.client.force_login(admin)
         r = self.client.get(reverse("aircraft_detail", args=[self.a.pk]))
         self.assertContains(r, 'href="https://www.facebook.com/osflifeflight" target="_blank" rel="noopener noreferrer" '
                                'title="The Facebook page set on its program">Facebook page</a>')
         page = self.client.get(reverse("admin:tracker_program_change", args=[self.lf.pk]))
-        self.assertContains(page, 'name="facebook_url"')
-        self.assertContains(page, 'name="instagram_url"')
+        self.assertContains(page, 'name="facebook"')
+        self.assertContains(page, "Facebook username")
         self.assertContains(self.client.get(reverse("admin:tracker_aircraft_change", args=[self.a.pk])),
-                            'name="facebook_url"')
+                            'name="instagram"')
