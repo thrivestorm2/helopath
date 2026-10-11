@@ -105,10 +105,10 @@
     });
   };
   const boxes = document.querySelectorAll('.map-toggle input');
-  const fit = () => {
+  const fit = (animate = true) => {
     const b = L.latLngBounds([]);
     Object.entries(layers).forEach(([k, g]) => { if (k !== 'coverage' && map.hasLayer(g) && g.getLayers().length) b.extend(g.getBounds()); });
-    if (b.isValid()) map.fitBounds(b, {padding: [30, 30], maxZoom: 13});
+    if (b.isValid()) map.fitBounds(b, {padding: [30, 30], maxZoom: 13, animate});
   };
   const apply = refit => {
     boxes.forEach(cb => { cb.checked ? layers[cb.value].addTo(map) : map.removeLayer(layers[cb.value]); });
@@ -124,9 +124,65 @@
     boxes.forEach(cb => { if (cb.checked) url.searchParams.append('show', cb.value); });
     history.replaceState(null, '', url);
   };
-  boxes.forEach(cb => cb.addEventListener('change', () => apply(cb.value !== 'coverage')));
+  boxes.forEach(cb => cb.addEventListener('change', () => { userMoved = true; apply(cb.value !== 'coverage'); }));
   apply(false);
-  fit();
+  fit(false);
+
+  // Your location (only if the browser allows it; never stored or sent anywhere): centre on you and zoom to show
+  // the NEAR_N nearest visible sites, so dense areas get a closer view and sparse ones a broad one, within limits.
+  const NEAR_N = 10, MIN_SPAN_M = 15000, MAX_SPAN_M = 300000;
+  let userMoved = false, me = null, meDot = null;
+  const markUser = () => { userMoved = true; };
+  map.on('dragstart', markUser);
+  el.addEventListener('wheel', markUser, {passive: true});
+  el.addEventListener('dblclick', markUser);
+  el.addEventListener('touchstart', e => { if (e.touches.length > 1) markUser(); }, {passive: true});
+  const visiblePoints = () => {
+    const pts = [];
+    Object.entries(layers).forEach(([k, g]) => {
+      if (k !== 'coverage' && map.hasLayer(g)) g.eachLayer(l => { if (l.getLatLng) pts.push(l.getLatLng()); });
+    });
+    return pts;
+  };
+  const zoomToMe = () => {
+    if (!me) return false;
+    const dists = visiblePoints().map(p => map.distance(me, p)).sort((a, b) => a - b);
+    if (!dists.length || dists[0] > MAX_SPAN_M) return false;  // far from every site: keep the full view
+    const reach = dists[Math.min(NEAR_N, dists.length) - 1];
+    const span = Math.min(MAX_SPAN_M, Math.max(MIN_SPAN_M, 2 * reach * 1.15));
+    map.stop();  // an animation still running would swallow this move
+    map.fitBounds(me.toBounds(span), {animate: false});
+    return true;
+  };
+  const locate = auto => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(pos => {
+      me = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      if (!meDot) {
+        meDot = L.circleMarker(me, {radius: 7, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1,
+                                    interactive: false}).addTo(map);
+        meDot.bindTooltip('You are here', {direction: 'right', offset: [8, 0]});
+      } else {
+        meDot.setLatLng(me);
+      }
+      if (!auto || !userMoved) zoomToMe();  // a toggle, filter or pan before the answer wins
+    }, () => {}, {timeout: 15000, maximumAge: 600000});
+  };
+  const Buttons = L.Control.extend({
+    onAdd: () => {
+      const box = L.DomUtil.create('div', 'leaflet-bar map-buttons');
+      const btn = (label, title, fn) => {
+        const a = L.DomUtil.create('a', '', box);
+        a.href = '#'; a.textContent = label; a.title = title; a.setAttribute('role', 'button');
+        L.DomEvent.on(a, 'click', e => { L.DomEvent.preventDefault(e); L.DomEvent.stopPropagation(e); fn(); });
+      };
+      btn('⌖', 'My location', () => { userMoved = true; me ? zoomToMe() : locate(false); });
+      btn('⤢', 'Fit all', () => { userMoved = true; fit(); });
+      return box;
+    },
+  });
+  new Buttons({position: 'topleft'}).addTo(map);
+  locate(true);
   window.addEventListener('resize', () => { fitHeight(); map.invalidateSize(); });
 })();
 </script>
