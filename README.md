@@ -88,7 +88,9 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
 4. **Attribution.** ODbL footer on every page, the admin, and the CSV export.
 5. **No patient information.** No patient fields exist; notes fields carry a warning; missions are "inferred".
 6. **No employer-derived data.** Fleet from discovery, sites from FAA data, nothing else imported.
-7. **Aggregates out.** The only export is `/flows/export.csv` (MonthlyAggregate rows). Legs are not in the admin.
+7. **Aggregates out.** The only general export is `/flows/export.csv` (MonthlyAggregate rows). Legs are not in the
+   admin. Owner-approved exception: admins can export unresolved legs (`/quality/unresolved/export.csv`) to
+   diagnose why landings do not match a site.
 8. **Medical helicopters only.** Only `discovered`/`confirmed` aircraft are shown; the registry table is not in
    the UI; undiscovered traces and their legs are purged after 120 days.
 

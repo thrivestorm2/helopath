@@ -1,7 +1,7 @@
 """FAA airports/heliports near landing spots: linking spots to them, and creating sites for them automatically."""
 
 from django.conf import settings
-from django.contrib.admin.models import ADDITION, LogEntry
+from django.contrib.admin.models import ADDITION, CHANGE, LogEntry
 from django.contrib.auth import get_user_model
 
 from . import rawstore
@@ -72,3 +72,61 @@ def auto_create_faa_sites(source):
                  if any(haversine_m(s.lat, s.lon, lat, lon) <= reach[s.pk] for s in created)}
         build_legs(source, hexes & rawstore.hexes(source))  # only hexes whose traces are still kept
     return created
+
+
+
+def _keeper_rank(site, arrivals):
+    """Which duplicate to keep: reviewed first, then one an admin made (not the FAA seed), then the busiest."""
+    return (not site.reviewed, site.origin == "faa_seed", -arrivals.get(site.pk, 0), site.pk)
+
+
+def merge_duplicate_faa_sites():
+    """Sites sharing an FAA ID (ignoring case and spaces) are merged into one: everything that points at a
+    duplicate (legs, missions, aircraft bases, hangars, totals, landing spots) is moved to the kept site, its
+    blank fields are filled from the duplicate, the larger radius is kept, and the duplicate is deleted.
+    Returns [(kept site, [removed names])]."""
+    from collections import defaultdict
+
+    from django.db import transaction
+    from django.db.models import Count
+
+    groups = defaultdict(list)
+    for site in Site.objects.exclude(faa_id=""):
+        groups[site.faa_id.strip().upper()].append(site)
+    groups = {k: v for k, v in groups.items() if len(v) > 1}
+    if not groups:
+        return []
+    ids = [s.pk for sites in groups.values() for s in sites]
+    arrivals = dict(Leg.objects.filter(end_site_id__in=ids).values_list("end_site").annotate(n=Count("pk")))
+    relations = [f for f in Site._meta.get_fields(include_hidden=True)
+                 if f.auto_created and not f.concrete and (f.one_to_many or f.one_to_one)]
+    owner = get_user_model().objects.filter(is_superuser=True).order_by("pk").first()
+    merged = []
+    for code, sites in groups.items():
+        sites.sort(key=lambda s: _keeper_rank(s, arrivals))
+        keep, dups = sites[0], sites[1:]
+        with transaction.atomic():
+            for dup in dups:
+                for rel in relations:
+                    # A site whose weather hangar is the duplicate now uses the kept site.
+                    rel.related_model.objects.filter(**{rel.field.name: dup}).update(**{rel.field.name: keep})
+                for field in ("city", "state", "faa_id"):
+                    if not getattr(keep, field):
+                        setattr(keep, field, getattr(dup, field))
+                keep.radius_m = max(keep.radius_m, dup.radius_m)
+                keep.reviewed = keep.reviewed or dup.reviewed
+                keep.is_active = keep.is_active or dup.is_active
+                keep.notes = "\n".join(n for n in (keep.notes, f"Merged with duplicate '{dup.name}' (same FAA ID "
+                                                    f"{code}); its notes: {dup.notes or 'none'}") if n)
+            keep.faa_id = code
+            if keep.weather_hangar_id in {d.pk for d in dups}:
+                keep.weather_hangar = keep
+            keep.save()
+            names = [d.name for d in dups]
+            Site.objects.filter(pk__in=[d.pk for d in dups]).delete()
+        if owner:
+            LogEntry.objects.log_actions(user_id=owner.pk, queryset=[keep], action_flag=CHANGE, single_object=True,
+                                         change_message=f"Merged duplicate sites with FAA ID {code}: "
+                                                        + ", ".join(names))
+        merged.append((keep, names))
+    return merged

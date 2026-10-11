@@ -12,6 +12,7 @@ from import_export.widgets import ForeignKeyWidget
 
 from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
 from .ops import queue_refresh
+from .faa import merge_duplicate_faa_sites
 from .places import clear_covered_clusters
 from .rebuild_flag import flag_rebuild
 
@@ -110,7 +111,9 @@ class SiteAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         flag_rebuild(f"site {obj.name} {'edited' if change else 'added'}")
-        cleared = clear_covered_clusters(obj)
+        for keep, names in merge_duplicate_faa_sites():
+            messages.success(request, f"Merged {', '.join(names)} into {keep.name}: same FAA ID {keep.faa_id}.")
+        cleared = clear_covered_clusters(obj) if Site.objects.filter(pk=obj.pk).exists() else 0
         if cleared:
             messages.success(request, f"{obj.name} replaces {cleared} landing spot{'s' if cleared != 1 else ''} "
                                       "in the Cluster queue.")
