@@ -14,15 +14,28 @@
     {% else %}not set{% if is_admin %} (<form method="post" action="{% url 'set_weather_hangar' site.pk %}" class="inline">{% csrf_token %}<input type="hidden" name="hangar" value="{{ site.pk }}"><button class="link">at this base</button></form>){% endif %}{% endif %}</span>{% endif %}
   {% if is_admin %}· <a href="{% url 'admin:tracker_site_change' site.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}</p>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+{% if based %}
+<div class="card" id="based">
+  <h2 style="margin-top:0">Aircraft based here <span class="muted" style="font-size:14px">({{ based|length }})</span></h2>
+  <div class="scroll"><table class="stack">
+  <tr class="head"><th>Aircraft</th><th>Operator</th><th>Program</th><th></th></tr>
+  {% for a in based %}<tr data-href="{% url 'aircraft_detail' a.pk %}"><td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a></td>
+    <td data-label="Operator">{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
+    <td data-label="Program">{% if a.program %}<a href="{% url 'program_detail' a.program_id %}">{{ a.program }}</a>{% else %}—{% endif %}</td>
+    <td>{% if a.base_is_inferred %}<span class="badge discovered" title="Base found from where it parks overnight; not confirmed">inferred</span>{% endif %}</td></tr>
+  {% endfor %}
+  </table></div>
+</div>
+{% endif %}
 {% if site.site_type == "hospital_helipad" or flows.received or flows.sent %}
 <div class="card" id="patients">
   <h2 style="margin-top:0">Patients received and sent <span class="muted" style="font-size:14px">(inferred)</span></h2>
   <p><strong>{{ flows.received }}</strong> received <span class="muted">· {% if flows.from_scenes %}<a href="{{ flows.scene_map }}" class="map-link">{{ flows.from_scenes }} from scenes <span aria-hidden="true">⌖</span></a>{% else %}0 from scenes{% endif %} · {{ flows.from_hospitals }} from other hospitals</span>
     &nbsp; <strong>{{ flows.sent }}</strong> sent <span class="muted">· to other hospitals</span></p>
   <h3>Received from</h3>
-  {% include "tracker/_flow_table.html" with heading="From" rows=flows.received_rows months=flows.months n_months=flows.n_months empty_text="No patients received yet." %}
+  {% include "tracker/_flow_table.html" with heading="From" rows=flows.received_rows months=flows.months n_months=flows.n_months empty_text="No patients received yet." what="sending hospitals" %}
   <h3>Sent to</h3>
-  {% include "tracker/_flow_table.html" with heading="To" rows=flows.sent_rows months=flows.months n_months=flows.n_months empty_text="No transfers out yet." %}
+  {% include "tracker/_flow_table.html" with heading="To" rows=flows.sent_rows months=flows.months n_months=flows.n_months empty_text="No transfers out yet." what="receiving hospitals" %}
   {% if flows.n_months > flows.months|length %}<p class="muted">Showing the latest {{ flows.months|length }} of {{ flows.n_months }} months; Avg (per month) and Total cover all {{ flows.n_months }}.</p>{% endif %}
   <p class="muted">Counted from inferred missions: a scene or another hospital followed by a landing here is a patient
     received; a landing here followed by another hospital is a patient sent.{% if flows.unresolved %}
@@ -41,6 +54,12 @@
 <script>
 // Flow tables open scrolled to the newest months (the name and Avg columns stay pinned).
 document.querySelectorAll('.flows-scroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
+// Top 5 rows show; "Show all" reveals the rest.
+document.querySelectorAll('button.flows-more').forEach(b => b.addEventListener('click', () => {
+  const table = document.getElementById(b.dataset.table);
+  const open = table.classList.toggle('show-all');
+  b.textContent = open ? 'Show top 5' : b.dataset.label;
+}));
 </script>
 <script>
 const map = L.map('map', {zoomSnap: 0.25}).setView([{{ site.lat|stringformat:"f" }}, {{ site.lon|stringformat:"f" }}], 15);
