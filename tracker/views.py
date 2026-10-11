@@ -20,6 +20,7 @@ from django.views.decorators.http import require_POST
 
 from .inference.pipeline import local_day
 from . import places
+from .faa import faa_near
 from .geo import SiteIndex
 from .hangars import based_aircraft, suggest_hangars
 from .lookup import call_sign_suggestions, lookup_links, program_suggestions
@@ -791,7 +792,7 @@ def _add_site_links(clusters, next_url=None):
     form pre-filled for it) and `alternatives` [(candidate, url)]."""
     known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
     busy = settings.PLACE_LOOKUP_MIN_LANDINGS
-    faa = _faa_near(clusters)
+    faa = faa_near(clusters)
     for c in clusters:
         c.lookup_wanted = c.landing_count > busy
         c.suggestion = known.get(places.location_key(c.lat, c.lon)) if c.lookup_wanted else None
@@ -819,24 +820,6 @@ def _add_site_links(clusters, next_url=None):
         else:
             c.create_url = _cluster_add_site_url(c, f"Cluster {c.lat:.4f},{c.lon:.4f}", next_url=next_url)
             c.alternatives = []
-
-
-def _faa_near(clusters):
-    """{cluster pk: (FaaFacility, distance m, Site with that FAA ID or None)} for clusters within
-    FAA_LINK_RADIUS_M of an FAA airport/heliport (the nearest one)."""
-    if not clusters:
-        return {}
-    pad = 0.05
-    lats, lons = [c.lat for c in clusters], [c.lon for c in clusters]
-    index = SiteIndex(FaaFacility.objects.filter(lat__range=(min(lats) - pad, max(lats) + pad),
-                                                 lon__range=(min(lons) - pad, max(lons) + pad)))
-    out = {}
-    for c in clusters:
-        near = index.within(c.lat, c.lon, settings.FAA_LINK_RADIUS_M)
-        if near:
-            out[c.pk] = (near[0][1], round(near[0][0]), None)
-    sites = {s.faa_id.upper(): s for s in Site.objects.filter(faa_id__in=[f.faa_id for f, _, _ in out.values()])}
-    return {pk: (f, d, sites.get(f.faa_id.upper())) for pk, (f, d, _) in out.items()}
 
 
 @require_POST
@@ -1032,7 +1015,7 @@ def _spot_markers(request):
     if admin:
         _add_site_links(clusters, next_url=request.get_full_path())
     else:
-        faa = _faa_near(clusters)
+        faa = faa_near(clusters)
         for c in clusters:
             c.faa, c.faa_distance_m, c.faa_site = faa.get(c.pk, (None, None, None))
     out = []

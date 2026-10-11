@@ -97,3 +97,54 @@ class ClusterFaaLinkTests(TestCase):
         r = self.client.get(reverse("site_map"), {"f": 1, "show": "spot"})
         spots = {m["lat"]: m for m in r.context["markers"] if m["kind"] == "spot"}
         self.assertIn("FAA WI99: Froedtert Menomonee Falls Hospital (89 m)", spots[43.0902]["info"])
+
+
+class AutoFaaSiteTests(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from tracker.models import Aircraft, Leg
+        User.objects.create_superuser("root", password="x")
+        FaaFacility.objects.create(faa_id="WI99", name="Froedtert Menomonee Falls Hospital",
+                                   site_type=Site.HOSPITAL, city="Menomonee Falls", state="WI",
+                                   lat=43.0910, lon=-88.1785, elevation_ft=860)
+        FaaFacility.objects.create(faa_id="IL55", name="Quiet Heliport", site_type=Site.OTHER, city="Q", state="IL",
+                                   lat=41.0005, lon=-88.0)
+        self.confirmed = Aircraft.objects.create(tail_number="N1", icao_hex="c00001", status=Aircraft.CONFIRMED)
+        discovered = Aircraft.objects.create(tail_number="N2", icao_hex="c00002", status=Aircraft.DISCOVERED)
+        now = timezone.now()
+        for ac, lat, lon, n in [(self.confirmed, 43.0902, -88.1785, 2), (discovered, 43.0902, -88.1786, 2),
+                                (discovered, 41.0, -88.0, 3)]:
+            for i in range(n):
+                ts = now - timedelta(days=i + 1)
+                Leg.objects.create(hex=ac.icao_hex, aircraft=ac, source="adsblol", start_ts=ts, end_ts=ts,
+                                   start_lat=lat, start_lon=lon, end_lat=lat, end_lon=lon, end_state=Leg.LANDED)
+
+    def test_spot_at_faa_facility_with_confirmed_landings_becomes_a_site(self):
+        from unittest import mock
+
+        from tracker.inference import pipeline
+        from tracker.models import LandingCluster
+        with mock.patch("tracker.rawstore.hexes", return_value={"c00001", "c00002"}), \
+                mock.patch.object(pipeline, "build_legs") as rebuild_legs:
+            pipeline.build_clusters("adsblol")
+        site = Site.objects.get(faa_id="WI99")
+        self.assertEqual((site.name, site.site_type, site.city, site.state, site.reviewed, site.origin),
+                         ("Froedtert Menomonee Falls Hospital", Site.HOSPITAL, "Menomonee Falls", "WI", True,
+                          "from_cluster"))
+        self.assertAlmostEqual(site.lat, 43.0902, places=4)  # where they land (the spot), not the FAA point
+        self.assertAlmostEqual(site.lon, -88.1785, places=3)
+        self.assertIn("2 landings by confirmed aircraft", site.notes)
+        rebuild_legs.assert_called_once_with("adsblol", {"c00001", "c00002"})  # their landings count at once
+        self.assertFalse(Site.objects.filter(faa_id="IL55").exists())  # only unconfirmed aircraft land there
+        self.assertTrue(LandingCluster.objects.filter(lat__gt=40.9, lat__lt=41.1).exists())
+        # Running again creates nothing new.
+        with mock.patch.object(pipeline, "build_legs"):
+            pipeline.build_clusters("adsblol")
+        self.assertEqual(Site.objects.filter(faa_id="WI99").count(), 1)
+
+    def test_other_sources_never_create_sites(self):
+        from tracker.faa import auto_create_faa_sites
+        self.assertEqual(auto_create_faa_sites("opensky"), [])
