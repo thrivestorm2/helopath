@@ -49,6 +49,9 @@ def run_task(task: OpsTask):
         elif task.kind == OpsTask.REFRESH:
             src = settings.PRIMARY_SOURCE
             log(f"auto-confirmed {apply_auto_confirm_rules()} aircraft by rule")
+            from .faa import merge_duplicate_faa_sites
+            for keep, names in merge_duplicate_faa_sites():
+                log(f"merged into {keep.name} (FAA {keep.faa_id}): {', '.join(names)}")
             from .resolution import auto_expand_radii
             for site, old, new, n in auto_expand_radii(src):
                 log(f"widened {site.name}: {old} m -> {new} m ({n} landings just outside)")

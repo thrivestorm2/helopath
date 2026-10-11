@@ -521,7 +521,7 @@ def flows(request):
 
 
 def flows_csv(request):
-    """The only export in the app: aggregate counts, never flight-level rows (guardrail 7)."""
+    """Aggregate counts, never flight-level rows (guardrail 7; the one exception is unresolved_csv)."""
     resp = HttpResponse(content_type="text/csv")
     resp["Content-Disposition"] = 'attachment; filename="helopath-flows.csv"'
     w = csv.writer(resp)
@@ -586,6 +586,74 @@ def unresolved(request):
         "spots": [(c, n) for c, n in d.spots.most_common(15)],
         "confirmed_only": _confirmed_only(request),
     })
+
+
+UNRESOLVED_CSV_COLUMNS = [
+    "leg_id", "ended_utc", "category", "category_title", "end_state", "end_lat", "end_lon", "end_alt_ft", "agl_ft",
+    "nearest_site", "nearest_site_type", "nearest_site_radius_m", "nearest_site_m", "suggested_radius_m",
+    "nearest_faa_id", "nearest_faa_name", "nearest_faa_type", "nearest_faa_m",
+    "spot_lat", "spot_lon", "spot_landings", "spot_dismissed",
+    "aircraft", "hex", "aircraft_status", "operator", "program", "base", "base_is_inferred", "inferred_base_lat",
+    "inferred_base_lon", "started_utc", "start_site", "start_lat", "start_lon", "minutes", "gaps_bridged",
+    "callsign", "confidence"]
+
+
+@admin_required
+def unresolved_csv(request):
+    """Owner-requested diagnostic export (the one exception to guardrail 7): every unresolved leg of the last
+    90 days with what is near where it ended, so the causes can be studied and fixed elsewhere. Medical
+    aircraft only; no patient information exists."""
+    d = diagnose(medical_legs(request, days=90), SOURCE)
+    category = request.GET.get("cat", "")
+    rows = sorted((r for r in d.rows if not category or r.category == category), key=lambda r: r.end_ts)
+    legs = Leg.objects.select_related("start_site").in_bulk([r.pk for r in rows])
+    planes = Aircraft.objects.select_related("operator", "program", "base", "inferred_base").in_bulk(
+        {r.aircraft_id for r in rows if r.aircraft_id})
+    suggested = {site.pk: radius for site, _, radius, _ in radius_suggestions(d, limit=None)}
+    faa, spots = SiteIndex([]), SiteIndex([])
+    if rows:
+        pad = 0.1
+        lats, lons = [r.lat for r in rows], [r.lon for r in rows]
+        box = dict(lat__range=(min(lats) - pad, max(lats) + pad), lon__range=(min(lons) - pad, max(lons) + pad))
+        faa = SiteIndex(FaaFacility.objects.filter(**box))
+        spots = SiteIndex(LandingCluster.objects.filter(source=SOURCE, **box))
+
+    resp = HttpResponse(content_type="text/csv")
+    resp["Content-Disposition"] = (f'attachment; filename="helopath-unresolved-{timezone.localdate():%Y-%m-%d}'
+                                   f'{"-" + category if category else ""}.csv"')
+    w = csv.writer(resp)
+    w.writerow(["# Contains data from adsb.lol, made available under the Open Database License (ODbL). "
+                f"Unresolved legs, last 90 days: {len(rows):,} of {d.total:,} legs "
+                f"(resolved {d.resolved:,}). Missions are inferred; no patient information."])
+    w.writerow(UNRESOLVED_CSV_COLUMNS)
+
+    def num(x, digits=0):
+        return "" if x is None else round(x, digits) if digits else round(x)
+
+    for r in rows:
+        leg, a = legs.get(r.pk), planes.get(r.aircraft_id)
+        site = r.nearest_site
+        f = next(iter(faa.within(r.lat, r.lon, 5000)), None)
+        spot = next(iter(spots.within(r.lat, r.lon, settings.CLUSTER_RADIUS_M * 2)), None)
+        base = a.effective_base if a else None
+        w.writerow([
+            r.pk, r.end_ts.strftime("%Y-%m-%d %H:%M:%S"), r.category, r.category_title, r.end_state,
+            round(r.lat, 5), round(r.lon, 5), num(leg.end_alt_ft if leg else None), num(r.agl_ft),
+            site.name if site else "", site.site_type if site else "", site.radius_m if site else "",
+            num(r.nearest_m), suggested.get(site.pk, "") if site else "",
+            f[1].faa_id if f else "", f[1].name if f else "", f[1].site_type if f else "", num(f[0]) if f else "",
+            round(spot[1].lat, 5) if spot else "", round(spot[1].lon, 5) if spot else "",
+            spot[1].landing_count if spot else "", spot[1].dismissed if spot else "",
+            a.display_name if a else "", a.icao_hex if a else (leg.hex if leg else ""), a.status if a else "",
+            a.operator.name if a and a.operator else "", a.program.name if a and a.program else "",
+            base.name if base else "", a.base_is_inferred if a else "",
+            num(a.inferred_base_lat, 5) if a else "", num(a.inferred_base_lon, 5) if a else "",
+            leg.start_ts.strftime("%Y-%m-%d %H:%M:%S") if leg else "",
+            leg.start_site.name if leg and leg.start_site else "",
+            round(leg.start_lat, 5) if leg else "", round(leg.start_lon, 5) if leg else "",
+            num((leg.end_ts - leg.start_ts).total_seconds() / 60, 1) if leg else "",
+            leg.gaps_bridged if leg else "", leg.callsign if leg else "", leg.confidence if leg else ""])
+    return resp
 
 
 @require_POST

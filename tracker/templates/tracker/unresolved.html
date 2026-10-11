@@ -71,6 +71,8 @@
   {% if confirmed_only %}<input type="hidden" name="confirmed" value="1">{% endif %}
   <select name="cat" onchange="this.form.submit()"><option value="">All categories</option>{% for key, title in categories %}<option value="{{ key }}" {% if cat == key %}selected{% endif %}>{{ title }}</option>{% endfor %}</select>
   <input type="hidden" name="sort" value="{{ sort }}">
+  {% if is_admin %}<a class="button" href="{% url 'unresolved_csv' %}?{% if confirmed_only %}confirmed=1&amp;{% endif %}{% if cat %}cat={{ cat }}{% endif %}"
+     title="Every unresolved leg{% if cat_title %} in this category{% endif %} with what is near where it ended, as a spreadsheet">Export CSV</a>{% endif %}
 </form>
 <div class="scroll"><table class="stack">
 <tr class="head">

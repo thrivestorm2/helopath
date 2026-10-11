@@ -525,9 +525,11 @@ def build_aggregates(source):
 def build_downstream(source, progress=None):
     """Everything after legs. Cheap enough to run in full every night."""
     progress = progress or (lambda message: None)
+    from ..faa import merge_duplicate_faa_sites  # one site per FAA ID
+    merged = merge_duplicate_faa_sites()
     progress("widening site radii")
     from ..resolution import auto_expand_radii  # sites with landings just outside their radius
-    stats = {"radii_widened": len(auto_expand_radii(source))}
+    stats = {"sites_merged": len(merged), "radii_widened": len(auto_expand_radii(source))}
     progress("discovering aircraft")
     stats["discovered"] = run_discovery(source)
     progress("finding landing clusters")
