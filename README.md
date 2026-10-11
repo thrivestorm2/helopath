@@ -93,6 +93,7 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
 3. **Rebuildable.** `rebuild --source` drops and re-derives everything from the retained
    `RawTrace` rows (the gzip trace files exactly as downloaded).
    Aircraft `status`, `operator`, `program`, `base`, `notes` and cluster dismissals (kept by location) survive.
+   Aircraft rows are never removed automatically, even if one no longer meets the discovery rule.
 4. **Attribution.** ODbL footer on every page, the admin, and the CSV export.
 5. **No patient information.** No patient fields exist; notes fields carry a warning; missions are "inferred".
 6. **No employer-derived data.** Fleet from discovery, sites from FAA data, nothing else imported.

@@ -160,12 +160,14 @@ class PipelineTests(TestCase):
         pipeline.build_aggregates("adsblol")
         self.assertEqual(sum(MonthlyAggregate.objects.filter(includes_unreviewed=False).values_list("count", flat=True)), 4)
 
-    def test_site_deactivation_undiscovers_untouched_aircraft(self):
+    def test_aircraft_kept_when_it_no_longer_qualifies(self):
         self._ingest_all()
+        before = list(Aircraft.objects.values_list("pk", "icao_hex", "status"))
+        self.assertTrue(before)
         Site.objects.filter(site_type=Site.HOSPITAL).update(is_active=False)
         pipeline.rebuild("adsblol")
-        self.assertFalse(Aircraft.objects.exists())
-        self.assertTrue(Leg.objects.filter(hex=MED).exists())
+        self.assertEqual(list(Aircraft.objects.values_list("pk", "icao_hex", "status")), before)  # same rows, untouched
+        self.assertTrue(Leg.objects.filter(hex=MED, aircraft__icao_hex=MED).exists())
 
     def test_purge_removes_only_undiscovered_traces(self):
         self._ingest_all()
