@@ -252,3 +252,45 @@ class SocialIconTests(TestCase):
         r = self.client.get(reverse("program_detail", args=[prog.pk]))
         self.assertContains(r, 'href="https://www.instagram.com/osflifeflight/"')
         self.assertNotContains(r, "social-facebook")
+
+    def test_icons_on_site_and_aircraft_pages_only_when_set(self):
+        viewer = User.objects.create_user("v4", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        site = Site.objects.create(name="OSF St Francis", site_type=Site.HOSPITAL, lat=40.7, lon=-89.6)
+        r = self.client.get(reverse("site_detail", args=[site.pk]))
+        self.assertNotContains(r, "social-icon")
+        site.facebook, site.instagram = "osfstfrancis", "osf_stfrancis"
+        site.save()
+        r = self.client.get(reverse("site_detail", args=[site.pk]))
+        self.assertContains(r, 'class="social-icon social-facebook" href="https://www.facebook.com/osfstfrancis"')
+        self.assertContains(r, 'class="social-icon social-instagram" href="https://www.instagram.com/osf_stfrancis/"')
+
+        prog = Program.objects.create(name="OSF Life Flight", facebook="osflifeflight")
+        a = Aircraft.objects.create(tail_number="N911LF", icao_hex="ad077b", status=Aircraft.CONFIRMED, program=prog)
+        r = self.client.get(reverse("aircraft_detail", args=[a.pk]))
+        self.assertNotContains(r, "social-icon")  # the program's page stays in Look it up, not the header
+        a.instagram = "lifeflight1"
+        a.save()
+        r = self.client.get(reverse("aircraft_detail", args=[a.pk]))
+        self.assertContains(r, 'class="social-icon social-instagram" href="https://www.instagram.com/lifeflight1/"')
+        self.assertNotContains(r, "social-icon social-facebook")
+
+    def test_site_admin_stores_usernames_and_rejects_other_sites(self):
+        admin = User.objects.create_superuser("root2", password="x")
+        self.client.force_login(admin)
+        site = Site.objects.create(name="Peoria Intl", site_type=Site.AIRPORT, faa_id="PIA", lat=40.66, lon=-89.69)
+        data = {"name": site.name, "site_type": site.site_type, "faa_id": "PIA", "city": "", "state": "",
+                "lat": site.lat, "lon": site.lon, "elevation_ft": 0, "radius_m": 300, "origin": "manual",
+                "is_active": "on", "notes": "", "weather_hangar": "",
+                "facebook": "https://www.facebook.com/flypia/?ref=page", "instagram": "@flypia"}
+        url = reverse("admin:tracker_site_change", args=[site.pk])
+        r = self.client.post(url, data)
+        self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["adminform"].form.errors)
+        site.refresh_from_db()
+        self.assertEqual((site.facebook, site.instagram), ("flypia", "flypia"))
+        r = self.client.post(url, {**data, "facebook": "https://example.com/flypia"})
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Enter a Facebook username")
+        site.refresh_from_db()
+        self.assertEqual(site.facebook, "flypia")
