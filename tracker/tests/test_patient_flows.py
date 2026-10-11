@@ -46,7 +46,7 @@ class PatientFlowTests(TestCase):
         self.assertContains(r, ">Avg</th>")
         self.assertContains(r, '<th class="n" title="September 2026">Sep</th>')
         self.assertContains(r, f'<tr data-href="{b_link}"><td class="fac"><a href="{b_link}">Hospital B</a>')
-        self.assertContains(r, '<table class="flows">')  # name and Avg pinned; months scroll between them
+        self.assertContains(r, '<table class="flows" id="flows-from">')  # name and Avg pinned; months scroll
         self.assertContains(r, "5 visits where the direction is unknown are not counted")
         flows = self.client.get(reverse("site_detail", args=[self.a.pk]) + "?confirmed=1").context["flows"]
         self.assertEqual((flows["received"], flows["sent"]), (1, 0))
@@ -68,7 +68,7 @@ class PatientFlowTests(TestCase):
         self.assertEqual(rows["Hospital A"], (1, 0))
         self.assertEqual(rows["Hospital B"], (0, 1))
 
-    def test_latest_six_months_shown_average_and_total_over_all(self):
+    def test_latest_three_months_shown_average_and_total_over_all(self):
         e = Site.objects.create(name="Hospital E", site_type=Site.HOSPITAL, lat=40, lon=-89)
         for m in range(1, 9):  # Jan..Aug 2026, m patients each month from Hospital B
             MonthlyAggregate.objects.create(source="adsblol", origin_site=self.b, destination_site=e,
@@ -76,9 +76,38 @@ class PatientFlowTests(TestCase):
                                             mean_confidence=0.9, includes_unreviewed=True)
         r = self.client.get(reverse("site_detail", args=[e.pk]))
         flows = r.context["flows"]
-        self.assertEqual(flows["months"], [date(2026, m, 1) for m in range(3, 9)])  # latest 6 of 8
+        self.assertEqual(flows["months"], [date(2026, m, 1) for m in range(6, 9)])  # latest 3 of 8
         name, _, counts, avg, tot = flows["received_rows"][0]
-        self.assertEqual((name, counts, tot), ("Hospital B", [3, 4, 5, 6, 7, 8], 36))
+        self.assertEqual((name, counts, tot), ("Hospital B", [6, 7, 8], 36))
         self.assertEqual(avg, 36 / 8)  # all 8 months
-        self.assertContains(r, "Showing the latest 6 of 8 months")
+        self.assertContains(r, "Showing the latest 3 of 8 months")
         self.assertContains(r, '<td class="n avg">4.5</td>')
+
+
+
+    def test_top_five_rows_then_show_all(self):
+        e = Site.objects.create(name="Hospital E", site_type=Site.HOSPITAL, lat=40, lon=-89)
+        for i in range(7):
+            src = Site.objects.create(name=f"Sender {i}", site_type=Site.HOSPITAL, lat=40, lon=-89)
+            MonthlyAggregate.objects.create(source="adsblol", origin_site=src, destination_site=e,
+                                            label="interfacility", month=date(2026, 9, 1), count=10 - i,
+                                            mean_confidence=0.9, includes_unreviewed=True)
+        r = self.client.get(reverse("site_detail", args=[e.pk]))
+        html = r.content.decode()
+        self.assertEqual(html.count('class="more"'), 2)  # rows 6 and 7 hidden until "Show all"
+        self.assertContains(r, 'data-table="flows-from" data-label="Show all 7 sending hospitals"')
+        self.assertNotContains(r, 'data-table="flows-to"')  # 5 or fewer: no button
+
+    def test_aircraft_based_here_shown_above_patients(self):
+        from tracker.models import Aircraft, Operator
+        op = Operator.objects.create(name="Air Methods")
+        Aircraft.objects.create(tail_number="N911LF", icao_hex="a00001", status=Aircraft.CONFIRMED, base=self.a,
+                                operator=op, call_sign="LIFE 1")
+        Aircraft.objects.create(tail_number="N2", icao_hex="a00002", status=Aircraft.DISCOVERED, inferred_base=self.a)
+        r = self.client.get(reverse("site_detail", args=[self.a.pk]))
+        html = r.content.decode()
+        self.assertLess(html.index("Aircraft based here"), html.index("Patients received and sent"))
+        self.assertContains(r, "LIFE 1 (N911LF)")
+        self.assertContains(r, ">Air Methods</a>")
+        self.assertContains(r, ">inferred</span>")
+        self.assertNotContains(self.client.get(reverse("site_detail", args=[self.b.pk])), "Aircraft based here")

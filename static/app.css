@@ -173,3 +173,7 @@ main.full { position:relative; }
 .pin.spot::after { content:"?"; position:absolute; inset:0; color:#fff; font:700 9px/12px system-ui, sans-serif; text-align:center; }
 .map-bar .pin.spot { width:10px; height:10px; } .map-bar .pin.spot::after { font-size:8px; line-height:10px; }
 .leaflet-marker-icon .pin.spot { margin:2px; }
+/* Patient flow tables: top 5 rows until "Show all". */
+table.flows tr.more { display:none; }
+table.flows.show-all tr.more { display:table-row; }
+button.flows-more { margin:6px 0 4px; }
