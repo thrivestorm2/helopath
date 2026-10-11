@@ -37,6 +37,9 @@ COVERAGE_GAP_S = _env("COVERAGE_GAP_S", 90)
 SPOT_MAP_MIN_LANDINGS = _env("SPOT_MAP_MIN_LANDINGS", 3)
 SPOT_MAP_DAYS = _env("SPOT_MAP_DAYS", 90)
 
+# A landing spot this close to an FAA airport/heliport is linked to it (Create site pre-filled from FAA data).
+FAA_LINK_RADIUS_M = _env("FAA_LINK_RADIUS_M", 250)
+
 # Leg stitching: rejoin one flight that coverage split into two airborne legs. The pieces are
 # joined only when the aircraft was cruising at both ends, the gap is short, and the jump across
 # the gap matches both the heading and the speed it was flying (a slow "implied speed" means it

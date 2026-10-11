@@ -8,7 +8,9 @@ For clusters with more than {{ lookup_min }} landings, named hospitals and helip
 {% for c in clusters %}
 <tr id="c{{ c.pk }}">
   <td class="lead"><a href="https://www.openstreetmap.org/?mlat={{ c.lat|stringformat:'.5f' }}&mlon={{ c.lon|stringformat:'.5f' }}#map=17/{{ c.lat|stringformat:'.5f' }}/{{ c.lon|stringformat:'.5f' }}" target="_blank" rel="noopener"><code>{{ c.lat|floatformat:5 }}, {{ c.lon|floatformat:5 }}</code></a></td>
-  <td data-label="Suggested"{% if not c.lookup_wanted %} class="desktop-only"{% endif %}><div class="suggestion">{% if c.suggestion and c.suggestion.name %}<strong>{{ c.suggestion.name }}</strong>
+  <td data-label="Suggested"{% if not c.lookup_wanted %} class="desktop-only"{% endif %}><div class="suggestion">{% if c.faa %}<strong>{{ c.faa.name }}</strong>
+      <span class="muted">(FAA {{ c.faa.faa_id }}, {{ c.faa_distance_m }} m · {{ c.faa.city }}, {{ c.faa.state }}){% if c.faa_site %} · already the site <a href="{% url 'site_detail' c.faa_site.pk %}">{{ c.faa_site.name }}</a>, just outside its radius{% endif %}</span>
+    {% elif c.suggestion and c.suggestion.name %}<strong>{{ c.suggestion.name }}</strong>
       <span class="muted">({{ c.suggestion.kind }}, {{ c.suggestion.distance_m }} m{% if c.suggestion.city or c.suggestion.state %} · {{ c.suggestion.city }}{% if c.suggestion.city and c.suggestion.state %}, {% endif %}{{ c.suggestion.state }}{% endif %} · <a href="{{ c.suggestion.osm_url }}" target="_blank" rel="noopener">OSM</a>)</span>
       {% if c.alternatives %}<details><summary class="muted">{{ c.alternatives|length }} other nearby</summary>
         {% for cand, url in c.alternatives %}<div class="muted">{{ cand.name }} ({{ cand.kind }}, {{ cand.distance_m }} m) <a href="{{ url }}">Use</a></div>{% endfor %}</details>{% endif %}
@@ -20,7 +22,7 @@ For clusters with more than {{ lookup_min }} landings, named hospitals and helip
   <td data-label="First / last">{{ c.first_seen|date:"Y-m-d" }} / {{ c.last_seen|date:"Y-m-d" }}</td>
   <td data-label="Nearest site">{% if c.nearest_site %}{{ c.nearest_site.name }} ({{ c.nearest_site_distance_m|floatformat:0 }} m){% else %}—{% endif %}</td>
   <td style="white-space:nowrap">
-    <a class="button" href="{{ c.create_url }}">Create site</a>
+    <a class="button" href="{{ c.create_url }}">{% if c.faa_site %}Edit site{% elif c.faa %}Create FAA site{% else %}Create site{% endif %}</a>
     <form method="post" action="{% url 'cluster_dismiss' c.pk %}" style="display:inline">{% csrf_token %}<button>Dismiss</button></form>
   </td>
 </tr>
