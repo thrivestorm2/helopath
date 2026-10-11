@@ -162,3 +162,14 @@ class UnaddedSpotTests(TestCase):
         self.client.force_login(self.admin)
         r = self.client.get(reverse("site_map"))
         self.assertNotIn("spot", r.context["shown"])
+
+
+class MapLocateTests(TestCase):
+    def test_location_buttons_and_limits_on_the_page(self):
+        viewer = User.objects.create_user("v2", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        r = self.client.get(reverse("site_map"))
+        for part in ("navigator.geolocation.getCurrentPosition", "'My location'", "'Fit all'",
+                     "NEAR_N = 10, MIN_SPAN_M = 15000, MAX_SPAN_M = 300000", "if (!auto || !userMoved)"):
+            self.assertContains(r, part)
