@@ -1,6 +1,6 @@
 {% extends "tracker/base.html" %}{% load humanize %}
 {% block content %}
-<h1>{{ program.name }}</h1>
+<h1>{{ program.name }} {% include "tracker/_social_icons.html" with obj=program %}</h1>
 <p class="muted">Program{% if program.operator %} flown by <a href="{% url 'operator_detail' program.operator_id %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.operator }}</a>{% endif %}
   · {{ aircraft|length }} aircraft · {{ total|intcomma }} inferred missions
   {% if is_admin %}· <a href="{% url 'admin:tracker_program_change' program.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a>{% endif %}
