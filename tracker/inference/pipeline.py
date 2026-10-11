@@ -193,14 +193,7 @@ def run_discovery(source):
         aircraft.save()
         existing[hexid] = aircraft
 
-    # An auto-discovered row nobody has touched, which no longer meets the rule
-    # (e.g. a site was deactivated), is a derived row and goes away on rebuild.
-    for hexid, a in existing.items():
-        untouched = a.status == Aircraft.DISCOVERED and a.origin == "auto" and not (
-            a.operator_id or a.base_id or a.notes or a.program_id or a.call_sign
-        )
-        if untouched and hexid not in qualified:
-            a.delete()
+    # Once added, an aircraft stays even if it no longer meets the rule (e.g. a site was deactivated).
 
     for a in Aircraft.objects.all():
         Leg.objects.filter(source=source, hex=a.icao_hex).exclude(aircraft=a).update(aircraft=a)
