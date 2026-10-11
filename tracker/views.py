@@ -778,9 +778,9 @@ def cluster_queue(request):
                                                           "recent_days": dj_settings.SPOT_MAP_DAYS})
 
 
-def _cluster_add_site_url(c, name, city="", state="", site_type=Site.BASE, next_url=None):
+def _cluster_add_site_url(c, name, city="", state="", site_type=Site.BASE, next_url=None, **extra):
     params = {"lat": f"{c.lat:.6f}", "lon": f"{c.lon:.6f}", "origin": "from_cluster", "radius_m": 300,
-              "site_type": site_type, "name": name, "city": city, "state": state}
+              "site_type": site_type, "name": name, "city": city, "state": state, **extra}
     if next_url:
         params["next"] = next_url
     return reverse("admin:tracker_site_add") + "?" + urlencode(params)
@@ -791,10 +791,25 @@ def _add_site_links(clusters, next_url=None):
     form pre-filled for it) and `alternatives` [(candidate, url)]."""
     known = {(p.lat3, p.lon3): p for p in PlaceSuggestion.objects.all()}  # one query, not one per cluster
     busy = settings.PLACE_LOOKUP_MIN_LANDINGS
+    faa = _faa_near(clusters)
     for c in clusters:
         c.lookup_wanted = c.landing_count > busy
         c.suggestion = known.get(places.location_key(c.lat, c.lon)) if c.lookup_wanted else None
-        if c.suggestion is not None and c.suggestion.name:
+        c.faa, c.faa_distance_m, c.faa_site = faa.get(c.pk, (None, None, None))
+        if c.faa_site is not None:
+            # The FAA facility is already a site (its radius just misses these landings): open it instead.
+            url = reverse("admin:tracker_site_change", args=[c.faa_site.pk])
+            c.create_url = url + ("?" + urlencode({"next": next_url}) if next_url else "")
+            c.alternatives = []
+        elif c.faa is not None:
+            # Within FAA_LINK_RADIUS_M of an FAA airport/heliport: the new site is that facility, reviewed.
+            from .seed import default_radius
+            f = c.faa
+            c.create_url = _cluster_add_site_url(c, f.name, f.city, f.state, f.site_type, next_url, faa_id=f.faa_id,
+                                                 reviewed="on", elevation_ft=round(f.elevation_ft),
+                                                 radius_m=default_radius(f.site_type))
+            c.alternatives = []
+        elif c.suggestion is not None and c.suggestion.name:
             # Choosing a suggested hospital or helipad makes the new site a hospital helipad.
             s = c.suggestion
             c.create_url = _cluster_add_site_url(c, s.name, s.city, s.state, Site.HOSPITAL, next_url)
@@ -804,6 +819,24 @@ def _add_site_links(clusters, next_url=None):
         else:
             c.create_url = _cluster_add_site_url(c, f"Cluster {c.lat:.4f},{c.lon:.4f}", next_url=next_url)
             c.alternatives = []
+
+
+def _faa_near(clusters):
+    """{cluster pk: (FaaFacility, distance m, Site with that FAA ID or None)} for clusters within
+    FAA_LINK_RADIUS_M of an FAA airport/heliport (the nearest one)."""
+    if not clusters:
+        return {}
+    pad = 0.05
+    lats, lons = [c.lat for c in clusters], [c.lon for c in clusters]
+    index = SiteIndex(FaaFacility.objects.filter(lat__range=(min(lats) - pad, max(lats) + pad),
+                                                 lon__range=(min(lons) - pad, max(lons) + pad)))
+    out = {}
+    for c in clusters:
+        near = index.within(c.lat, c.lon, settings.FAA_LINK_RADIUS_M)
+        if near:
+            out[c.pk] = (near[0][1], round(near[0][0]), None)
+    sites = {s.faa_id.upper(): s for s in Site.objects.filter(faa_id__in=[f.faa_id for f, _, _ in out.values()])}
+    return {pk: (f, d, sites.get(f.faa_id.upper())) for pk, (f, d, _) in out.items()}
 
 
 @require_POST
@@ -998,6 +1031,10 @@ def _spot_markers(request):
     admin = is_admin(request.user)
     if admin:
         _add_site_links(clusters, next_url=request.get_full_path())
+    else:
+        faa = _faa_near(clusters)
+        for c in clusters:
+            c.faa, c.faa_distance_m, c.faa_site = faa.get(c.pk, (None, None, None))
     out = []
     for c in clusters:
         info = [f"Repeat landing spot, not a site yet",
@@ -1006,14 +1043,19 @@ def _spot_markers(request):
                 f"Last seen {_short_date(local_day(c.last_seen))}"]
         if c.nearest_site:
             info.append(f"Nearest site: {c.nearest_site.name} ({c.nearest_site_distance_m:,.0f} m)")
+        faa = getattr(c, "faa", None)
+        if faa is not None:
+            info.append(f"FAA {faa.faa_id}: {faa.name} ({c.faa_distance_m} m)"
+                        + (" — already a site" if c.faa_site is not None else ""))
         suggestion = getattr(c, "suggestion", None)
-        if suggestion is not None and suggestion.name:
+        if faa is None and suggestion is not None and suggestion.name:
             info.append(f"Looks like: {suggestion.name}" + (f", {suggestion.city}" if suggestion.city else ""))
         if admin:
-            info.append("Click to add it as a site")
+            info.append("Click to open that site" if getattr(c, "faa_site", None) is not None
+                        else "Click to add it as a site")
         out.append({"kind": "spot", "name": f"Spot {c.lat:.4f}, {c.lon:.4f}", "lat": round(c.lat, 5),
                     "lon": round(c.lon, 5), "url": c.create_url if admin else None, "info": info,
-                    "link": "Add as site →"})
+                    "link": "Open site →" if getattr(c, "faa_site", None) is not None else "Add as site →"})
     return out
 
 
