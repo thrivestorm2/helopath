@@ -17,6 +17,10 @@ elif os.environ.get("DATABASE_URL"):
 else:
     SECRET_KEY = "dev-insecure-change-me"
 DEBUG = os.environ.get("HELOPATH_DEBUG", "1") == "1"
+if not DEBUG and SECRET_KEY == "dev-insecure-change-me":
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("Set HELOPATH_SECRET_KEY (or DATABASE_URL) when HELOPATH_DEBUG is off.")
 ALLOWED_HOSTS = [h for h in os.environ.get("HELOPATH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("HELOPATH_CSRF_ORIGINS", "").split(",") if o]
 # DigitalOcean App Platform sets APP_DOMAIN (e.g. helopath-abc12.ondigitalocean.app).

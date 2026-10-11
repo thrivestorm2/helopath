@@ -5,3 +5,17 @@ __pycache__/
 /.venv/
 .env
 *.sqlite3*
+# Never commit secrets or local data
+.env.*
+!.env.example
+*.pem
+*.key
+*.sqlite
+*.db
+/media/
+/downloads/
+*.zip
+*.tar
+*.tar.gz
+!tracker/tests/fixtures/*
+.DS_Store

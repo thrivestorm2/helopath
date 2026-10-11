@@ -1,8 +1,16 @@
-# helopath — Air Medical Tracker, Phase 1
+# helopath — Air Medical Tracker
 
-Private proof of concept. It ingests open ADS-B history from adsb.lol, discovers which helicopters use hospital
-helipads in Illinois and the border receiving areas, and infers their legs, landings and missions. The number
-Phase 1 must produce is the **resolved-landing rate**: legs ending at an identified site ÷ all legs.
+An open-source tool that studies **air medical helicopter activity from public ADS-B data**. It ingests open
+ADS-B history from [adsb.lol](https://adsb.lol), discovers which helicopters use hospital helipads in Illinois and
+the border receiving areas, and infers their legs, landings, missions and patient transfers between hospitals.
+
+- **Inferred, not observed.** Missions and patient flows are worked out from aircraft positions. Nothing here
+  asserts that a patient was on board, and the app holds **no patient information** of any kind.
+- **Private by design.** The running app requires a login; this repository contains the code only — no data, no
+  credentials and no deployment secrets (they live in the hosting provider's encrypted settings).
+- The headline measure is the **resolved-landing rate**: legs ending at an identified site ÷ all legs.
+
+Licensed under the [GNU Affero General Public License v3.0](LICENSE). Security issues: see [SECURITY.md](SECURITY.md).
 
 Stack: Django 5 · PostgreSQL in production (SQLite locally) · server-rendered templates + HTMX + Leaflet · Gunicorn ·
 DigitalOcean App Platform (web service + background worker + managed PostgreSQL).
@@ -34,7 +42,7 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate                 # also creates the Viewer and Admin groups
 python manage.py createsuperuser
-python manage.py test tracker            # 36 tests; set DATABASE_URL to run them on PostgreSQL
+python manage.py test tracker            # set DATABASE_URL to run them on PostgreSQL
 python manage.py runserver
 ```
 
@@ -153,3 +161,21 @@ The FAA NASR download URL used by **Seed FAA sites** (`tracker/nasr.py`) is unve
 fallback on the Operations page. `registry.faa.gov` and `faa.gov` were blocked from the sandbox this was built in. The registry loader follows the
 FAA's `ardata.pdf` column names and the site seed follows NASR `APT_BASE.csv` column names, both unit-tested on
 hand-made files. Check both on first real run. The ADS-B Exchange sample URL layout is also unverified.
+
+## Data sources and credits
+
+| Data | Source | Licence |
+|---|---|---|
+| Aircraft positions (ADS-B) | [adsb.lol](https://adsb.lol) | [ODbL](https://opendatacommons.org/licenses/odbl/) — attribution shown in the app footer |
+| Airports, heliports, aircraft registry | U.S. FAA (NASR, Releasable Aircraft) | Public domain (U.S. Government work) |
+| Map tiles, place names, city/state | [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (Overpass, Nominatim) | ODbL |
+| Map library | [Leaflet](https://leafletjs.com) (vendored in `static/vendor/`) | BSD-2-Clause |
+
+The repository includes one sample adsb.lol trace for the tests (`tracker/tests/fixtures/`); see the README there.
+
+## Licence
+
+Copyright © thrivestorm2 and contributors. This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+If you run a modified version for others over a network, you must offer them its source (section 13); the app's
+footer links to the source for this reason.
