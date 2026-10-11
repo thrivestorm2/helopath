@@ -12,6 +12,7 @@ from import_export.widgets import ForeignKeyWidget
 
 from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
 from .ops import queue_refresh
+from .places import clear_covered_clusters
 from .rebuild_flag import flag_rebuild
 
 admin.site.site_header = "Air Medical Tracker admin"
@@ -109,6 +110,10 @@ class SiteAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         flag_rebuild(f"site {obj.name} {'edited' if change else 'added'}")
+        cleared = clear_covered_clusters(obj)
+        if cleared:
+            messages.success(request, f"{obj.name} replaces {cleared} landing spot{'s' if cleared != 1 else ''} "
+                                      "in the Cluster queue.")
         messages.warning(request, "Site changes take effect after the next rebuild (see the banner at the top).")
 
 

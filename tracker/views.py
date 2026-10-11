@@ -772,7 +772,7 @@ def cluster_queue(request):
 
     clusters = _open_clusters()  # most landings first
     busy = dj_settings.PLACE_LOOKUP_MIN_LANDINGS
-    _add_site_links(clusters)
+    _add_site_links(clusters, next_url=reverse("cluster_queue"))  # saving the new site comes back here
     return render(request, "tracker/cluster_queue.html", {"clusters": clusters, "lookup_min": busy,
                                                           "recent_days": dj_settings.SPOT_MAP_DAYS})
 
@@ -1023,6 +1023,18 @@ def site_place(request):
         lat, lon = float(request.GET["lat"]), float(request.GET["lon"])
     except (KeyError, ValueError):
         return JsonResponse({"error": "lat and lon are required"}, status=400)
+    if request.GET.get("names"):
+        # New-site form: up to three names to pick from, plus the city and state.
+        try:
+            names, (city, state) = places.site_name_options(lat, lon)
+        except Exception:
+            cached = places.cached(lat, lon)  # a cluster lookup made earlier, if any
+            names = [{**c, "site_type": places.SITE_TYPE_FOR_KIND.get(c.get("kind"), Site.BASE)}
+                     for c in (cached.candidates if cached else [])][:3]
+            if not names:
+                return JsonResponse({"city": "", "state": "", "names": [], "error": "lookup failed"})
+            city, state = cached.city, cached.state
+        return JsonResponse({"city": city, "state": state, "names": names, "error": ""})
     try:
         city, state = places.place_for_point(lat, lon)
     except Exception:
