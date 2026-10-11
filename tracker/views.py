@@ -43,6 +43,7 @@ from .models import (
 )
 from .operators import absorb_operator
 from .ops import queue_refresh
+from .quality import site_quality
 from .resolution import CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, radius_suggestions
 from .rebuild_flag import flag_rebuild, progress_percent, rebuild_active, rebuild_progress, rebuild_queued
 from .roles import admin_required, is_admin
@@ -280,11 +281,25 @@ def site_list(request):
         qs = qs.filter(site_type=request.GET["type"])
     if request.GET.get("state"):
         qs = qs.filter(state=request.GET["state"])
-    qs, sort = _sorted(qs, request, {"name", "site_type", "city", "state", "faa_id", "radius_m", "reviewed",
-                                     "received", "sent"}, "name")
+    sort = request.GET.get("sort", "name")
     view = request.GET.get("view", "table")
+    if sort.lstrip("-") == "quality":
+        # The score is computed, not stored: rank every matching site (unscored ones last), then page the list.
+        sites = list(qs.order_by("name"))
+        quality = site_quality(sites, _statuses(request))
+        sites.sort(key=lambda x: (quality[x.pk].score is None,
+                                  -(quality[x.pk].score or 0) if sort.startswith("-") else (quality[x.pk].score or 0)))
+        page = _page(request, sites, 100) if view == "table" else None
+    else:
+        qs, sort = _sorted(qs, request, {"name", "site_type", "city", "state", "faa_id", "radius_m", "reviewed",
+                                         "received", "sent"}, "name")
+        page = _page(request, qs, 100) if view == "table" else None
+        quality = site_quality(list(page), _statuses(request)) if page is not None else {}
+    if page is not None:
+        for x in page:
+            x.quality = quality[x.pk]
     return render(request, "tracker/site_list.html", {
-        "page": _page(request, qs, 100) if view == "table" else None,
+        "page": page,
         "map_sites": [{"id": s.pk, "name": s.name, "type": s.site_type, "lat": s.lat, "lon": s.lon, "r": s.radius_m}
                       for s in qs] if view == "map" else [],
         "view": view, "sort": sort, "filter_qs": _filter_qs(request), "types": Site.TYPE_CHOICES,
@@ -317,7 +332,8 @@ def site_detail(request, pk):
     n_based = based_aircraft(site).count()
     return render(request, "tracker/site_detail.html", {
         "flows": patient_flows(request, site), "site": site, "months": months, "rows": rows, "n_based": n_based,
-        "based": based,
+        "based": based, "quality": site_quality([site], _statuses(request))[site.pk],
+        "quality_days": settings.QUALITY_DAYS, "quality_near_m": settings.QUALITY_NEAR_M,
         # Once a hangar is set the header just names it; changing it is done on the admin Edit page.
         "hangar_suggestion": next(iter(suggest_hangars(site, SOURCE, limit=1)), None)
         if n_based and not site.weather_hangar_id else None,
@@ -1004,18 +1020,25 @@ def site_map(request):
     hangars = {s.pk: s for s in Site.objects.filter(pk__in=list(hangar_for)).exclude(pk__in=list(bases))}
     landings = dict(legs.filter(end_site__site_type=Site.HOSPITAL).values_list("end_site").annotate(n=Count("pk")))
     hospital_q = Q(pk__in=list(landings)) if filtered else Q(site_type=Site.HOSPITAL, is_active=True)
-    hospitals = Site.objects.filter(hospital_q).exclude(pk__in=[*bases, *hangars])
+    hospitals = list(Site.objects.filter(hospital_q).exclude(pk__in=[*bases, *hangars]).order_by("name"))
 
     def place(s):
         return ", ".join(p for p in (s.city, s.state) if p)
 
     def marker(kind, s, info):
         return {"kind": kind, "name": s.name, "lat": round(s.lat, 5), "lon": round(s.lon, 5),
-                "url": reverse("site_detail", args=[s.pk]), "info": [i for i in [place(s), *info] if i]}
+                "url": reverse("site_detail", args=[s.pk]),
+                "info": [i for i in [place(s), *info, quality_line(s)] if i]}
 
     def landings_line(s):
         n = landings.get(s.pk, 0)
         return f"{n:,} landing{'s' if n != 1 else ''} in the last 90 days" + (" by these aircraft" if filtered else "")
+
+    quality = site_quality([*bases.values(), *hangars.values(), *hospitals], _statuses(request))
+
+    def quality_line(s):
+        q = quality[s.pk]
+        return f"ADS-B quality: {q.label}" + ("" if q.score is None else f" ({q.events} events, {settings.QUALITY_DAYS} days)")
 
     markers = []
     for s in sorted(bases.values(), key=lambda s: s.name):
@@ -1039,7 +1062,7 @@ def site_map(request):
         markers.append({**marker(kind, s, info), "base_too": kind == "hospital"})
     for s in sorted(hangars.values(), key=lambda s: s.name):
         markers.append(marker("hangar", s, ["Weather hangar for " + ", ".join(b.name for b in hangar_for[s.pk])]))
-    for s in hospitals.order_by("name"):
+    for s in hospitals:
         markers.append(marker("hospital", s, [landings_line(s)]))
 
     markers += _spot_markers(request)
