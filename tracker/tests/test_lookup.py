@@ -31,7 +31,7 @@ class LookupTests(TestCase):
         self.apply = reverse("aircraft_apply", args=[self.a.pk])
 
     def test_links(self):
-        links = {label: url for label, url, _ in lookup_links(self.a)}
+        links = {label: url for label, url, _, _ in lookup_links(self.a)}
         self.assertEqual(links["Facebook search"], "https://www.facebook.com/search/top?q=N911LF")
         self.assertEqual(links["Instagram search"], "https://www.instagram.com/explore/tags/n911lf/")
         self.assertIn("nNumberTxt=911LF", links["FAA registry"])  # FAA wants the number without the N
@@ -108,7 +108,7 @@ class SocialPageTests(TestCase):
                                          operator=self.op, program=self.lf)
 
     def links(self):
-        return {label: (url, title) for label, url, title in lookup_links(self.a)}
+        return {label: (url, title) for label, url, title, _ in lookup_links(self.a)}
 
     def test_aircraft_then_program_then_operator_then_search(self):
         links = self.links()
@@ -174,10 +174,81 @@ class SocialPageTests(TestCase):
         admin = User.objects.create_superuser("root", password="x")
         self.client.force_login(admin)
         r = self.client.get(reverse("aircraft_detail", args=[self.a.pk]))
-        self.assertContains(r, 'href="https://www.facebook.com/osflifeflight" target="_blank" rel="noopener noreferrer" '
-                               'title="The Facebook page set on its program">Facebook page</a>')
+        self.assertContains(r, '<a class="button social-facebook" href="https://www.facebook.com/osflifeflight" '
+                               'target="_blank" rel="noopener noreferrer" title="The Facebook page set on its program">'
+                               'Facebook page</a>')  # brand-coloured: an official page
+        self.assertContains(r, '<a class="button" href="https://www.google.com/')  # others stay plain
         page = self.client.get(reverse("admin:tracker_program_change", args=[self.lf.pk]))
         self.assertContains(page, 'name="facebook"')
         self.assertContains(page, "Facebook username")
         self.assertContains(self.client.get(reverse("admin:tracker_aircraft_change", args=[self.a.pk])),
                             'name="instagram"')
+
+
+class ShareLinkTests(TestCase):
+    SHARE = "https://www.facebook.com/share/18FNswjSVZ/?mibextid=wwXIfr"
+
+    def norm(self, value, lands_on=None, error=None):
+        from unittest import mock
+
+        from tracker import social
+        effect = error if error else (lambda url: lands_on)
+        with mock.patch.object(social, "resolve_redirect", side_effect=effect) as resolver:
+            return social.normalize("facebook", value), resolver
+
+    def test_share_link_followed_to_the_page(self):
+        name, resolver = self.norm(self.SHARE, lands_on="https://www.facebook.com/osflifeflight/?mibextid=wwXIfr")
+        self.assertEqual(name, "osflifeflight")
+        resolver.assert_called_once_with(self.SHARE)
+        self.assertEqual(self.norm("https://www.facebook.com/share/19sfnVtSrz/",
+                                   lands_on="https://m.facebook.com/profile.php?id=61550000000000")[0], "id:61550000000000")
+        self.assertEqual(self.norm("fb.me/abc123", lands_on="https://www.facebook.com/airmethods")[0], "airmethods")
+        # A login wall names the page in ?next=.
+        self.assertEqual(self.norm(self.SHARE, lands_on="https://www.facebook.com/login/?next=https%3A%2F%2Fwww."
+                                                         "facebook.com%2Fosflifeflight%2F")[0], "osflifeflight")
+
+    def test_failures_ask_for_the_address_bar_link(self):
+        from django.core.exceptions import ValidationError
+        for kwargs in ({"error": OSError("blocked")}, {"lands_on": self.SHARE},
+                       {"lands_on": "https://www.facebook.com/login/"}):
+            with self.assertRaises(ValidationError) as e:
+                self.norm(self.SHARE, **kwargs)
+            self.assertIn("copy the address bar link", str(e.exception))
+
+    def test_interstitial_page_read_from_its_canonical_link(self):
+        import io
+
+        from tracker.social import resolve_redirect
+
+        class Resp(io.BytesIO):
+            def geturl(self):
+                return "https://www.facebook.com/share/18FNswjSVZ/"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        html = b'<html><head><link rel="canonical" href="https://www.facebook.com/osflifeflight/" /></head></html>'
+        self.assertEqual(resolve_redirect(self.SHARE, opener=lambda req, timeout: Resp(html)),
+                         "https://www.facebook.com/osflifeflight/")
+
+
+class SocialIconTests(TestCase):
+    def test_icons_on_operator_and_program_pages_only_when_set(self):
+        viewer = User.objects.create_user("v3", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        op = Operator.objects.create(name="Air Methods", facebook="airmethods", instagram="airmethods")
+        prog = Program.objects.create(name="OSF Life Flight", operator=op)
+        r = self.client.get(reverse("operator_detail", args=[op.pk]))
+        self.assertContains(r, 'class="social-icon social-facebook" href="https://www.facebook.com/airmethods"')
+        self.assertContains(r, 'class="social-icon social-instagram" href="https://www.instagram.com/airmethods/"')
+        r = self.client.get(reverse("program_detail", args=[prog.pk]))
+        self.assertNotContains(r, "social-icon")  # the operator's pages are not shown on the program
+        prog.instagram = "osflifeflight"
+        prog.save()
+        r = self.client.get(reverse("program_detail", args=[prog.pk]))
+        self.assertContains(r, 'href="https://www.instagram.com/osflifeflight/"')
+        self.assertNotContains(r, "social-facebook")

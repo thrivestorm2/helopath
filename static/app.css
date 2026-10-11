@@ -186,3 +186,11 @@ button.flows-more { margin:6px 0 4px; }
 .quality-badge.small { padding:2px 8px; font-size:12px; min-width:2.2em; text-align:center; }
 h1 .faa-id { font-weight: 400; }
 .map-buttons a { font-size: 18px; line-height: 30px; width: 30px; height: 30px; text-align: center; }
+/* Official social pages: brand-coloured Look it up buttons, round icons on operator / program pages. */
+.button.social-facebook { background:#1877f2; border-color:#1877f2; color:#fff; }
+.button.social-instagram { background:linear-gradient(45deg,#f58529,#dd2a7b 50%,#8134af); border-color:#dd2a7b; color:#fff; }
+.social-icon { display:inline-flex; width:28px; height:28px; border-radius:50%; align-items:center; justify-content:center;
+  vertical-align:middle; margin-left:4px; }
+.social-icon svg { width:18px; height:18px; }
+.social-icon.social-facebook { background:#1877f2; }
+.social-icon.social-instagram { background:linear-gradient(45deg,#f58529,#dd2a7b 50%,#8134af); }
