@@ -18,10 +18,12 @@ SOURCE_CHOICES = [("adsblol", "adsb.lol"), ("adsbx", "ADS-B Exchange sample")]
 class Operator(SocialPagesMixin, models.Model):
     name = models.CharField(max_length=200, unique=True)
     parent_company = models.CharField(max_length=200, blank=True)
-    facebook_url = models.CharField("Facebook page", max_length=300, blank=True,
-                                    help_text="Link to the Facebook page (or @pagename). Used by Look it up.")
-    instagram_url = models.CharField("Instagram page", max_length=300, blank=True,
-                                     help_text="Link to the Instagram page (or @handle). Used by Look it up.")
+    facebook = models.CharField("Facebook username", max_length=120, blank=True,
+                                help_text="e.g. osflifeflight. Pasting the page's link is fine: only the username is "
+                                          "kept. Used by Look it up.")
+    instagram = models.CharField("Instagram username", max_length=120, blank=True,
+                                 help_text="e.g. osflifeflight. Pasting the profile link or @username is fine: only "
+                                           "the username is kept. Used by Look it up.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
 
     class Meta:
@@ -38,10 +40,12 @@ class Program(SocialPagesMixin, models.Model):
     operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL, related_name="programs",
                                  help_text="The company that flies it, if known.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
-    facebook_url = models.CharField("Facebook page", max_length=300, blank=True,
-                                    help_text="Link to the Facebook page (or @pagename). Used by Look it up.")
-    instagram_url = models.CharField("Instagram page", max_length=300, blank=True,
-                                     help_text="Link to the Instagram page (or @handle). Used by Look it up.")
+    facebook = models.CharField("Facebook username", max_length=120, blank=True,
+                                help_text="e.g. osflifeflight. Pasting the page's link is fine: only the username is "
+                                          "kept. Used by Look it up.")
+    instagram = models.CharField("Instagram username", max_length=120, blank=True,
+                                 help_text="e.g. osflifeflight. Pasting the profile link or @username is fine: only "
+                                           "the username is kept. Used by Look it up.")
 
     class Meta:
         ordering = ["name"]
@@ -168,10 +172,12 @@ class Aircraft(SocialPagesMixin, models.Model):
         default=False, help_text="Out of service after 'Active until': no new period, flights after it not counted. "
                                  "Untick to start a new period the day after.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
-    facebook_url = models.CharField("Facebook page", max_length=300, blank=True,
-                                    help_text="Link to the Facebook page (or @pagename). Used by Look it up.")
-    instagram_url = models.CharField("Instagram page", max_length=300, blank=True,
-                                     help_text="Link to the Instagram page (or @handle). Used by Look it up.")
+    facebook = models.CharField("Facebook username", max_length=120, blank=True,
+                                help_text="e.g. osflifeflight. Pasting the page's link is fine: only the username is "
+                                          "kept. Used by Look it up.")
+    instagram = models.CharField("Instagram username", max_length=120, blank=True,
+                                 help_text="e.g. osflifeflight. Pasting the profile link or @username is fine: only "
+                                           "the username is kept. Used by Look it up.")
 
     # Automation-owned.
     inferred_base = models.ForeignKey(

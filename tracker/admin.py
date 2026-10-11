@@ -206,7 +206,7 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         (None, {"fields": ("tail_number", "icao_hex", "status", "origin")}),
         ("Admin-owned", {"fields": ("call_sign", "call_sign_reviewed", "operator", "program", "program_reviewed", "base", "notes")}),
         ("Social pages (Look it up: blank uses the program's, then the operator's, else a search)",
-         {"fields": ("facebook_url", "instagram_url")}),
+         {"fields": ("facebook", "instagram")}),
         ("Current service period", {"fields": ("active_from", "active_to", "retired")}),
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
