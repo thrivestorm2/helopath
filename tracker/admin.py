@@ -53,7 +53,7 @@ class SiteResource(resources.ModelResource):
     class Meta:
         model = Site
         fields = ("id", "name", "site_type", "faa_id", "city", "state", "lat", "lon", "elevation_ft",
-                  "radius_m", "origin", "reviewed", "is_active", "notes")
+                  "radius_m", "origin", "reviewed", "is_active", "facebook", "instagram", "notes")
 
 
 class AircraftResource(resources.ModelResource):
@@ -105,6 +105,7 @@ class SiteAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         (None, {"fields": ("name", "site_type", "faa_id", "city", "state")}),
         ("Location (click the map to set)", {"fields": ("lat", "lon", "elevation_ft", "radius_m")}),
         ("Bad weather", {"fields": ("weather_hangar",)}),
+        ("Social pages (shown at the top of the site's page)", {"fields": ("facebook", "instagram")}),
         ("Status", {"fields": ("origin", "reviewed", "is_active", "notes")}),
     )
 

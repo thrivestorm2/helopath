@@ -64,7 +64,7 @@ class Program(SocialPagesMixin, models.Model):
         return self.aircraft.filter(operator__isnull=True).update(operator_id=self.operator_id)
 
 
-class Site(models.Model):
+class Site(SocialPagesMixin, models.Model):
     HOSPITAL = "hospital_helipad"
     BASE = "base"
     AIRPORT = "airport"
@@ -89,6 +89,12 @@ class Site(models.Model):
         help_text="For a base: where its aircraft shelter in bad weather (usually an airport). Aircraft based here "
                   "treat it as a second home, so flights from and to it are not lost. Choose the base itself when "
                   "its aircraft are hangared there.")
+    facebook = models.CharField("Facebook username", max_length=120, blank=True,
+                                help_text="e.g. osfstfrancis. Pasting the page's link is fine: only the username is "
+                                          "kept. Shown at the top of the site's page.")
+    instagram = models.CharField("Instagram username", max_length=120, blank=True,
+                                 help_text="e.g. osfstfrancis. Pasting the profile link or @username is fine: only "
+                                           "the username is kept. Shown at the top of the site's page.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
