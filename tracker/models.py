@@ -147,8 +147,16 @@ class Aircraft(models.Model):
     call_sign_reviewed = models.BooleanField("call sign suggestions dismissed", default=False)
     program_reviewed = models.BooleanField("program suggestions dismissed", default=False)
     base = models.ForeignKey(Site, null=True, blank=True, on_delete=models.SET_NULL, related_name="based_aircraft")
-    active_from = models.DateField(null=True, blank=True)
-    active_to = models.DateField(null=True, blank=True)
+    active_from = models.DateField(
+        null=True, blank=True, help_text="Start of the current service period (blank: since tracking began).")
+    active_to = models.DateField(
+        null=True, blank=True,
+        help_text="Last day served at this base. Saving closes this period into the service history and starts a "
+                  "new one the next day with the same operator and program but no base or call sign (or tick "
+                  "Retired to end service).")
+    retired = models.BooleanField(
+        default=False, help_text="Out of service after 'Active until': no new period, flights after it not counted. "
+                                 "Untick to start a new period the day after.")
     notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
 
     # Automation-owned.
@@ -233,6 +241,42 @@ class IngestRun(models.Model):
         ordering = ["-day", "-started_at"]
 
 
+class ServicePeriod(models.Model):
+    """A closed period of an aircraft's service: its base, call sign, operator and program between two dates.
+    The current period lives on the Aircraft itself (active_from .. active_to); closing it moves it here."""
+
+    aircraft = models.ForeignKey(Aircraft, on_delete=models.CASCADE, related_name="past_periods")
+    start = models.DateField(null=True, blank=True, help_text="Blank: since tracking began.")
+    end = models.DateField()
+    base = models.ForeignKey(Site, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    base_inferred = models.BooleanField(default=False, help_text="The base was inferred, not set by an admin.")
+    base_lat = models.FloatField(null=True, blank=True, help_text="Inferred base point when it was not a site.")
+    base_lon = models.FloatField(null=True, blank=True)
+    call_sign = models.CharField(max_length=60, blank=True)
+    operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    program = models.ForeignKey(Program, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    notes = models.TextField(blank=True, help_text=NO_PATIENT_INFO)
+
+    class Meta:
+        ordering = ["-end"]
+
+    def __str__(self):
+        return f"{self.aircraft.tail_number} {self.start or '…'} to {self.end}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.start and self.end and self.start > self.end:
+            raise ValidationError("The period ends before it starts.")
+        if not self.aircraft_id:
+            return
+        a = self.aircraft
+        if a.active_from and self.end >= a.active_from:
+            raise ValidationError(f"Must end before the current period starts ({a.active_from}).")
+        for other in ServicePeriod.objects.filter(aircraft=a).exclude(pk=self.pk):
+            if (self.start is None or other.end >= self.start) and (other.start is None or self.end >= other.start):
+                raise ValidationError(f"Overlaps the period {other.start or '…'} to {other.end}.")
+
+
 class Mission(models.Model):
     LABELS = [
         ("interfacility", "Interfacility"),
@@ -250,6 +294,10 @@ class Mission(models.Model):
     destination_site = models.ForeignKey(Site, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     confidence = models.FloatField()
     rule_fired = models.CharField(max_length=200)
+    # The aircraft's service period on the mission date (its base, operator and program then).
+    operator = models.ForeignKey(Operator, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    program = models.ForeignKey(Program, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    base = models.ForeignKey(Site, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
     class Meta:
         ordering = ["-start_ts"]

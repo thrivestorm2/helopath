@@ -28,13 +28,14 @@ from ..models import (
     RegistryAircraft,
     Site,
 )
+from ..periods import span_on, spans_by_aircraft
 from ..rules import apply_auto_confirm_rules
 from ..sources import get_adapter
 from .legs import infer_legs, is_qualifying_visit
 
 # Bump when a change to the counting rules (legs, discovery, missions, aggregates) needs existing data rebuilt:
 # admins then see a "rebuild needed" banner after the deploy (tracker.rebuild_flag).
-PIPELINE_VERSION = 1
+PIPELINE_VERSION = 2
 
 log = logging.getLogger("tracker.inference")
 
@@ -212,8 +213,13 @@ def infer_bases(source):
     """Inferred base = where the aircraft most often starts its first leg of the local day."""
     for a in Aircraft.objects.all():
         firsts = {}
-        for leg in Leg.objects.filter(source=source, aircraft=a).select_related("start_site").order_by("start_ts"):
-            firsts.setdefault(local_day(leg.start_ts), leg)
+        legs = Leg.objects.filter(source=source, aircraft=a).select_related("start_site").order_by("start_ts")
+        for leg in legs:
+            day = local_day(leg.start_ts)
+            # Only the current service period: a new period must not inherit the previous base.
+            if (a.active_from and day < a.active_from) or (a.retired and a.active_to and day > a.active_to):
+                continue
+            firsts.setdefault(day, leg)
         if not firsts:
             continue
         votes = Counter()
@@ -309,14 +315,15 @@ HOME = (BASE, HANGAR)  # either one starts and ends a mission
 class _Base:
     """The aircraft's base, plus the base's weather hangar (a second home) when one is set."""
 
-    def __init__(self, aircraft):
-        site = aircraft.base or aircraft.inferred_base
+    def __init__(self, span):
+        """`span`: the aircraft's service period (periods.Span) whose base this is."""
+        site = span.base
         self.site = site
         self.hangar = site.weather_hangar if site and site.weather_hangar_id != site.pk else None
         if site:
             self.lat, self.lon, self.radius = site.lat, site.lon, site.radius_m
-        elif aircraft.inferred_base_lat is not None:
-            self.lat, self.lon = aircraft.inferred_base_lat, aircraft.inferred_base_lon
+        elif span.base_lat is not None:
+            self.lat, self.lon = span.base_lat, span.base_lon
             self.radius = settings.BASE_POINT_RADIUS_M
         else:
             self.lat = None
@@ -394,14 +401,16 @@ class HospitalVolumes:
     the patient is assumed to go to the busier hospital. Aircraft based at either hospital are left out of both
     counts, so the base aircraft's own trips (and its many landings at home) do not tip the comparison."""
 
-    def __init__(self, source):
+    def __init__(self, source, periods=None):
         self.total, self.by_base = Counter(), Counter()
-        for site_id, base_id, inferred_id in (
+        periods = spans_by_aircraft() if periods is None else periods
+        for site_id, aircraft_id, end_ts in (
                 Leg.objects.filter(source=source, end_site__site_type=Site.HOSPITAL,
                                    aircraft__status__in=Aircraft.VISIBLE)
-                .values_list("end_site_id", "aircraft__base_id", "aircraft__inferred_base_id")):
+                .values_list("end_site_id", "aircraft_id", "end_ts")):
+            span = span_on(periods.get(aircraft_id, []), local_day(end_ts))
             self.total[site_id] += 1
-            self.by_base[(site_id, base_id or inferred_id)] += 1
+            self.by_base[(site_id, span.base.pk if span and span.base else None)] += 1
 
     def busier(self, a, b):
         """True if hospital b is busier than hospital a (ids), not counting aircraft based at either."""
@@ -413,83 +422,95 @@ def build_missions(source):
     Mission.objects.filter(source=source).delete()
     max_gap = timedelta(hours=settings.MISSION_MAX_LEG_GAP_HOURS)
     created = 0
-    volumes = HospitalVolumes(source)
-    for aircraft in Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related(
-            "base__weather_hangar", "inferred_base__weather_hangar"):
-        base = _Base(aircraft)
-        if base.lat is None:
-            continue
-        legs = list(Leg.objects.filter(source=source, aircraft=aircraft).select_related("end_site", "start_site"))
-        arrivals = [_arrival(legs, i, base) for i in range(len(legs))]
-        groups = []  # (leg indexes, complete)
-        cur = None
-        prev_arr = None
-        for i, leg in enumerate(legs):
-            departs_home = base.home(leg.start_lat, leg.start_lon, leg.start_site_id) is not None
-            if cur is not None and (departs_home or leg.start_ts - legs[i - 1].end_ts > max_gap):
-                groups.append((cur, False))  # returned home unseen, or lost the thread
-                cur = None
-            if cur is None:
-                if not (departs_home or prev_arr in HOME):
-                    prev_arr = arrivals[i]
-                    continue
-                cur = []
-            cur.append(i)
-            if arrivals[i] in HOME:
-                groups.append((cur, True))
-                cur = None
-            prev_arr = arrivals[i]
-        built = []  # (mission, leg indexes)
-        for idxs, complete in groups:
-            stops = [arrivals[i] for i in idxs[:-1]] if complete else [arrivals[i] for i in idxs]
-            confs = [legs[i].confidence if legs[i].end_state != Leg.LOST else settings.MISSION_UNKNOWN_CONF
-                     for i in (idxs[:-1] if complete else idxs)]
-            first = legs[idxs[0]]
-            left = base.home(first.start_lat, first.start_lon, first.start_site_id) or BASE
-            if complete:
-                back = arrivals[idxs[-1]]
-                if not stops and left != back:  # base <-> weather hangar
-                    label, origin, dest = "reposition", base.home_site(left), base.home_site(back)
-                    conf, rule = legs[idxs[-1]].confidence, f"{left.lower()}>{back.lower()}"
-                else:
-                    if back == BASE and base.is_hospital and len(stops) == 1 and (
-                            stops[0] == UNMATCHED or (_is_hospital(stops[0]) and stops[0].pk != base.site.pk)):
-                        # Hospital base: landing back there after a scene or another hospital is the drop-off.
-                        # A there-and-back to another hospital (base > B > base) looks the same either way, so the
-                        # patient is assumed to go to the busier of the two: B if it is busier (base > B carried
-                        # the patient), else the base (B > base did).
-                        cap = settings.HOSPITAL_BASE_DELIVERY_CONF
-                        if stops[0] != UNMATCHED and volumes.busier(base.site.pk, stops[0].pk):
-                            stops, confs = [base.site] + stops, [min(legs[idxs[0]].confidence, cap)] + confs
-                        else:
-                            stops, confs = stops + [base.site], confs + [min(legs[idxs[-1]].confidence, cap)]
-                    label, origin, dest, conf, rule = classify_mission(stops, confs, left.lower(), back.lower())
-                    if origin is not None and base.site is not None and origin == base.site:
-                        rule += " (to the busier hospital)"
-            else:
-                label, origin, dest, conf = "unknown", None, None, settings.MISSION_UNKNOWN_CONF
-                rule = f"incomplete: {left.lower()}>" + "".join(f"{_symbol(s)}>" for s in stops) + "…"
-            built.append((Mission(
-                aircraft=aircraft,
-                source=source,
-                start_ts=legs[idxs[0]].start_ts,
-                end_ts=legs[idxs[-1]].end_ts,
-                label=label,
-                origin_site=origin,
-                destination_site=dest,
-                confidence=round(conf, 3),
-                rule_fired=rule,
-            ), idxs))
-        # Batched writes: one round trip per 500 rows instead of one per mission and per leg.
-        Mission.objects.bulk_create([m for m, _ in built], batch_size=500)
-        changed = []
-        for m, idxs in built:
-            for seq, i in enumerate(idxs):
-                legs[i].mission, legs[i].mission_seq = m, seq
-                changed.append(legs[i])
-        Leg.objects.bulk_update(changed, ["mission", "mission_seq"], batch_size=500)
-        created += len(built)
+    periods = spans_by_aircraft()
+    volumes = HospitalVolumes(source, periods)
+    for aircraft in Aircraft.objects.filter(status__in=Aircraft.VISIBLE):
+        all_legs = list(Leg.objects.filter(source=source, aircraft=aircraft).select_related("end_site", "start_site"))
+        # Each service period is chained on its own, from its own base; legs outside every period (before the
+        # first, or after retirement) are not counted.
+        for span in periods.get(aircraft.pk, []):
+            legs = [leg for leg in all_legs if span.contains(local_day(leg.start_ts))]
+            if legs:
+                created += _build_period_missions(source, aircraft, span, legs, volumes, max_gap)
     return created
+
+
+def _build_period_missions(source, aircraft, span, legs, volumes, max_gap):
+    base = _Base(span)
+    if base.lat is None:
+        return 0
+    arrivals = [_arrival(legs, i, base) for i in range(len(legs))]
+    groups = []  # (leg indexes, complete)
+    cur = None
+    prev_arr = None
+    for i, leg in enumerate(legs):
+        departs_home = base.home(leg.start_lat, leg.start_lon, leg.start_site_id) is not None
+        if cur is not None and (departs_home or leg.start_ts - legs[i - 1].end_ts > max_gap):
+            groups.append((cur, False))  # returned home unseen, or lost the thread
+            cur = None
+        if cur is None:
+            if not (departs_home or prev_arr in HOME):
+                prev_arr = arrivals[i]
+                continue
+            cur = []
+        cur.append(i)
+        if arrivals[i] in HOME:
+            groups.append((cur, True))
+            cur = None
+        prev_arr = arrivals[i]
+    built = []  # (mission, leg indexes)
+    for idxs, complete in groups:
+        stops = [arrivals[i] for i in idxs[:-1]] if complete else [arrivals[i] for i in idxs]
+        confs = [legs[i].confidence if legs[i].end_state != Leg.LOST else settings.MISSION_UNKNOWN_CONF
+                 for i in (idxs[:-1] if complete else idxs)]
+        first = legs[idxs[0]]
+        left = base.home(first.start_lat, first.start_lon, first.start_site_id) or BASE
+        if complete:
+            back = arrivals[idxs[-1]]
+            if not stops and left != back:  # base <-> weather hangar
+                label, origin, dest = "reposition", base.home_site(left), base.home_site(back)
+                conf, rule = legs[idxs[-1]].confidence, f"{left.lower()}>{back.lower()}"
+            else:
+                if back == BASE and base.is_hospital and len(stops) == 1 and (
+                        stops[0] == UNMATCHED or (_is_hospital(stops[0]) and stops[0].pk != base.site.pk)):
+                    # Hospital base: landing back there after a scene or another hospital is the drop-off.
+                    # A there-and-back to another hospital (base > B > base) looks the same either way, so the
+                    # patient is assumed to go to the busier of the two: B if it is busier (base > B carried
+                    # the patient), else the base (B > base did).
+                    cap = settings.HOSPITAL_BASE_DELIVERY_CONF
+                    if stops[0] != UNMATCHED and volumes.busier(base.site.pk, stops[0].pk):
+                        stops, confs = [base.site] + stops, [min(legs[idxs[0]].confidence, cap)] + confs
+                    else:
+                        stops, confs = stops + [base.site], confs + [min(legs[idxs[-1]].confidence, cap)]
+                label, origin, dest, conf, rule = classify_mission(stops, confs, left.lower(), back.lower())
+                if origin is not None and base.site is not None and origin == base.site:
+                    rule += " (to the busier hospital)"
+        else:
+            label, origin, dest, conf = "unknown", None, None, settings.MISSION_UNKNOWN_CONF
+            rule = f"incomplete: {left.lower()}>" + "".join(f"{_symbol(s)}>" for s in stops) + "…"
+        built.append((Mission(
+            aircraft=aircraft,
+            source=source,
+            start_ts=legs[idxs[0]].start_ts,
+            end_ts=legs[idxs[-1]].end_ts,
+            label=label,
+            origin_site=origin,
+            destination_site=dest,
+            confidence=round(conf, 3),
+            rule_fired=rule,
+            operator_id=span.operator_id,
+            program_id=span.program_id,
+            base=span.base,
+        ), idxs))
+    # Batched writes: one round trip per 500 rows instead of one per mission and per leg.
+    Mission.objects.bulk_create([m for m, _ in built], batch_size=500)
+    changed = []
+    for m, idxs in built:
+        for seq, i in enumerate(idxs):
+            legs[i].mission, legs[i].mission_seq = m, seq
+            changed.append(legs[i])
+    Leg.objects.bulk_update(changed, ["mission", "mission_seq"], batch_size=500)
+    return len(built)
 
 
 # --- aggregates -------------------------------------------------------------------------------
@@ -498,10 +519,10 @@ def build_aggregates(source):
     rows = []
     for includes_unreviewed, statuses in ((True, Aircraft.VISIBLE), (False, (Aircraft.CONFIRMED,))):
         buckets = defaultdict(list)
-        for m in Mission.objects.filter(source=source, aircraft__status__in=statuses).select_related("aircraft"):
-            a = m.aircraft
+        for m in Mission.objects.filter(source=source, aircraft__status__in=statuses):
             month = local_day(m.start_ts).replace(day=1)
-            key = (a.operator_id, a.base_id or a.inferred_base_id, m.origin_site_id, m.destination_site_id, month, m.label)
+            # Operator and base of the aircraft's service period on the mission date.
+            key = (m.operator_id, m.base_id, m.origin_site_id, m.destination_site_id, month, m.label)
             buckets[key].append(m.confidence)
         for (op, base, origin, dest, month, label), confs in buckets.items():
             rows.append(

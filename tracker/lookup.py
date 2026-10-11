@@ -31,8 +31,10 @@ def call_sign_suggestions(aircraft, source, limit=3):
     """[(flight ID, legs flown with it)] from the aircraft's ADS-B flight IDs, excluding its own tail number
     (many aircraft broadcast the registration, which says nothing new)."""
     seen = Counter()
-    for ids in Leg.objects.filter(source=source, aircraft=aircraft).exclude(callsign="").values_list(
-            "callsign", flat=True):
+    legs = Leg.objects.filter(source=source, aircraft=aircraft).exclude(callsign="")
+    if aircraft.active_from:  # current service period only: an earlier base's call sign is not this one
+        legs = legs.filter(start_ts__date__gte=aircraft.active_from)
+    for ids in legs.values_list("callsign", flat=True):
         seen.update(c.strip().upper() for c in ids.split(",") if c.strip())
     tail = aircraft.tail_number.upper()
     return [(c, n) for c, n in seen.most_common() if c not in (tail, tail.lstrip("N"))][:limit]

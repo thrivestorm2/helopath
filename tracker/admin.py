@@ -1,16 +1,19 @@
 from urllib.parse import urlencode
 
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
 from django.db.models import Count
 from django.http import HttpResponseRedirect
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import format_html, format_html_join
 from import_export import fields, resources
 from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 
-from .models import Aircraft, AutoConfirmRule, Operator, Program, Site
+from . import periods
+from .models import Aircraft, AutoConfirmRule, Operator, Program, ServicePeriod, Site
 from .ops import queue_refresh
 from .faa import merge_duplicate_faa_sites
 from .places import clear_covered_clusters
@@ -158,12 +161,41 @@ class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         return super().has_delete_permission(request, obj)
 
 
+class ServicePeriodInline(admin.TabularInline):
+    """Past service periods (closed with 'Active until'); editable to correct dates or details."""
+
+    model = ServicePeriod
+    extra = 0
+    fields = ("start", "end", "base", "call_sign", "operator", "program", "notes")
+    autocomplete_fields = ("base", "operator", "program")
+    verbose_name = "past service period"
+    verbose_name_plural = "Service history (past periods)"
+    ordering = ("-end",)
+
+
+class AircraftForm(forms.ModelForm):
+    class Meta:
+        model = Aircraft
+        fields = "__all__"
+
+    def clean(self):
+        data = super().clean()
+        start, end = data.get("active_from"), data.get("active_to")
+        if start and end and end < start:
+            raise forms.ValidationError("'Active until' is before 'Active from'.")
+        if data.get("retired") and not end and not (self.instance.pk and self.instance.retired):
+            data["active_to"] = timezone.localdate()  # retiring today unless a date is given
+        return data
+
+
 @admin.register(Aircraft)
 class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     resource_classes = [AircraftResource]
+    form = AircraftForm
+    inlines = [ServicePeriodInline]
     list_display = ("tail_number", "call_sign", "icao_hex", "status", "origin", "operator", "base", "inferred_base",
                     "qualifying_visits", "last_seen")
-    list_filter = ("status", "origin", "operator", "program")
+    list_filter = ("status", "retired", "origin", "operator", "program")
     search_fields = ("tail_number", "call_sign", "icao_hex", "program__name")
     autocomplete_fields = ("operator", "program", "base")
     readonly_fields = ("inferred_base", "inferred_base_lat", "inferred_base_lon", "make_model", "registrant_hint",
@@ -172,7 +204,8 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
                        "discovery_rule")
     fieldsets = (
         (None, {"fields": ("tail_number", "icao_hex", "status", "origin")}),
-        ("Admin-owned", {"fields": ("call_sign", "call_sign_reviewed", "operator", "program", "program_reviewed", "base", "active_from", "active_to", "notes")}),
+        ("Admin-owned", {"fields": ("call_sign", "call_sign_reviewed", "operator", "program", "program_reviewed", "base", "notes")}),
+        ("Current service period", {"fields": ("active_from", "active_to", "retired")}),
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
 
@@ -192,10 +225,33 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
             if obj.status == Aircraft.DISCOVERED:
                 obj.status = Aircraft.CONFIRMED
         had_operator = obj.operator_id
+        was_retired = change and form.initial.get("retired", False)
         super().save_model(request, obj, form, change)
         if obj.operator_id != had_operator:
             queue_refresh(request.user)
             self.message_user(request, f"Operator set to {obj.operator}, the operator of {obj.program}.")
+        self._service_period(request, obj, form, was_retired)
+
+    def _service_period(self, request, obj, form, was_retired):
+        """'Active until', 'Retired': close the period, end service, or start again."""
+        where = (obj.base or obj.inferred_base).name if (obj.base or obj.inferred_base) else "no base"
+        if obj.retired and not was_retired:
+            periods.retire(obj, obj.active_to)
+            msg = f"{obj} retired: service ended {obj.active_to}; later flights are not counted."
+        elif was_retired and not obj.retired:
+            ended = obj.active_to
+            periods.unretire(obj)
+            msg = (f"{obj} back in service: new period from {obj.active_from} with no base or call sign."
+                   if ended else f"{obj} back in service.")
+        elif obj.active_to and not obj.retired:
+            end = obj.active_to
+            periods.close_period(obj, end)
+            msg = (f"Service at {where} closed on {end}; new period from {obj.active_from} with the same operator "
+                   f"and program, no base or call sign.")
+        else:
+            return
+        flag_rebuild(f"service period changed for {obj.tail_number}")
+        self.message_user(request, msg)
 
     def has_delete_permission(self, request, obj=None):
         return False
