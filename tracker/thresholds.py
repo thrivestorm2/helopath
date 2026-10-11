@@ -40,6 +40,11 @@ SPOT_MAP_DAYS = _env("SPOT_MAP_DAYS", 90)
 # A landing spot this close to an FAA airport/heliport is linked to it (Create site pre-filled from FAA data).
 FAA_LINK_RADIUS_M = _env("FAA_LINK_RADIUS_M", 250)
 
+# Sites whose radius looks too small (landings just outside) are widened automatically to the suggested
+# radius when it is at most this big and less than half the distance to the nearest other site.
+AUTO_RADIUS_MAX_M = _env("AUTO_RADIUS_MAX_M", 1000)                  # hospitals, bases, other
+AUTO_RADIUS_MAX_AIRPORT_M = _env("AUTO_RADIUS_MAX_AIRPORT_M", 3000)
+
 # Leg stitching: rejoin one flight that coverage split into two airborne legs. The pieces are
 # joined only when the aircraft was cruising at both ends, the gap is short, and the jump across
 # the gap matches both the heading and the speed it was flying (a slow "implied speed" means it
