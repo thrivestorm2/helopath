@@ -256,7 +256,7 @@ def _cluster_key(lat, lon, coords):
 
 
 # --- landing clusters -----------------------------------------------------------------
-def build_clusters(source):
+def build_clusters(source, auto_sites=True):
     LandingCluster.objects.filter(source=source).delete()
     landings = Leg.objects.filter(
         source=source, end_state=Leg.LANDED, end_site__isnull=True, aircraft__status__in=Aircraft.VISIBLE
@@ -294,6 +294,10 @@ def build_clusters(source):
             )
         )
     LandingCluster.objects.bulk_create(rows)
+    from ..faa import auto_create_faa_sites
+    if auto_sites and auto_create_faa_sites(source):
+        # Spots at FAA airports/heliports became sites and their legs were re-derived: cluster again.
+        return build_clusters(source, auto_sites=False)
     return len(rows)
 
 
