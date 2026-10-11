@@ -23,6 +23,7 @@ urlpatterns = [
     path("flows/export.csv", views.flows_csv, name="flows_csv"),
     path("quality/", views.quality, name="quality"),
     path("quality/unresolved/", views.unresolved, name="unresolved"),
+    path("quality/unresolved/export.csv", views.unresolved_csv, name="unresolved_csv"),
     path("sites/<int:pk>/radius/", views.set_site_radius, name="set_site_radius"),
     path("ingest/", views.ingest_log, name="ingest_log"),
     path("review/", views.review_queue, name="review_queue"),
