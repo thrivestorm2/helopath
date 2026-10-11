@@ -125,12 +125,14 @@ form.inline { display: inline; margin: 0; }
 button.link { background: none; border: 0; padding: 0; color: #1d4ed8; text-decoration: underline; cursor: pointer; font: inherit; }
 #patients h3 { font-size: 15px; margin: 14px 0 6px; }
 #patients th, #patients td { padding-left: 5px; padding-right: 5px; }
-/* Hospital flow tables: name pinned left and Avg pinned right; months and Total scroll between them. */
-table.flows { width: auto; min-width: 100%; }
-table.flows .fac { position: sticky; left: 0; z-index: 1; background: var(--card); min-width: 110px; max-width: 170px;
-  box-shadow: 6px 0 6px -6px rgba(0, 0, 0, .25); }
-table.flows .avg { position: sticky; right: 0; z-index: 1; background: var(--card); box-shadow: -6px 0 6px -6px rgba(0, 0, 0, .25); }
-@media (max-width: 640px) { table.flows { font-size: 13px; } table.flows .fac { max-width: 120px; } }
+/* Hospital flow tables: name, months, Avg, Total in the page width; long names wrap rather than scroll. */
+table.flows { width: 100%; table-layout: auto; }
+table.flows .fac { width: 100%; overflow-wrap: anywhere; }
+table.flows th.n, table.flows td.n { width: 1%; white-space: nowrap; }
+@media (max-width: 640px) {
+  table.flows { font-size: 13px; }
+  #patients table.flows th, #patients table.flows td { padding-left: 3px; padding-right: 3px; }
+}
 
 /* Admins: "rebuild needed" banner at the top of every page until a rebuild is queued */
 .rebuild-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
