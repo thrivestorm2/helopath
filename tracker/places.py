@@ -73,6 +73,62 @@ def place_for_point(lat, lon, fetch=None):
     return containing_place(data.get("elements", []))
 
 
+# Kinds offered as site names on the new-site form, most likely first.
+NAME_KINDS = ["hospital", "helipad", "ambulance station", "fire station", "airport"]
+SITE_TYPE_FOR_KIND = {"hospital": "hospital_helipad", "helipad": "hospital_helipad", "airport": "airport",
+                      "ambulance station": "base", "fire station": "base"}
+
+
+def names_query(lat, lon, radius_m):
+    """Named places a helicopter might land at near the point, then the city and state containing it."""
+    around = f"(around:{radius_m},{lat:.6f},{lon:.6f})"
+    return (f"[out:json][timeout:25];("
+            f"nwr{around}[amenity=hospital];nwr{around}[healthcare=hospital];"
+            f"nwr{around}[aeroway~\"^(helipad|heliport)$\"];nwr{around}[emergency=ambulance_station];"
+            f"nwr{around}[amenity=fire_station];nwr{around}[aeroway=aerodrome];"
+            f");out center tags;"
+            f"is_in({lat:.6f},{lon:.6f})->.a;"
+            f'area.a[boundary=administrative][admin_level~"^(4|8)$"];out tags;')
+
+
+def _name_kind(tags):
+    if tags.get("amenity") == "hospital" or tags.get("healthcare") == "hospital":
+        return "hospital"
+    if tags.get("aeroway") in ("helipad", "heliport"):
+        return "helipad"
+    if tags.get("emergency") == "ambulance_station":
+        return "ambulance station"
+    if tags.get("amenity") == "fire_station":
+        return "fire station"
+    if tags.get("aeroway") == "aerodrome":
+        return "airport"
+    return None
+
+
+def site_name_options(lat, lon, limit=3, fetch=None):
+    """Up to `limit` names for a new site at the point: [{name, kind, site_type, distance_m, city, state}],
+    hospitals first, then helipads, ambulance and fire stations, airports; nearest first within a kind.
+    Also returns (city, state) containing the point. Raises on network errors."""
+    data = (fetch or fetch_overpass)(names_query(lat, lon, settings.PLACE_LOOKUP_RADIUS_M))
+    elements = data.get("elements", [])
+    area_city, area_state = containing_place(elements)
+    out, seen = [], set()
+    for e in elements:
+        tags = e.get("tags") or {}
+        name, kind = (tags.get("name") or "").strip(), _name_kind(tags)
+        plat = e.get("lat", (e.get("center") or {}).get("lat"))
+        plon = e.get("lon", (e.get("center") or {}).get("lon"))
+        if not name or not kind or plat is None or plon is None or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append({"name": name[:200], "kind": kind, "site_type": SITE_TYPE_FOR_KIND[kind],
+                    "distance_m": round(haversine_m(lat, lon, plat, plon)),
+                    "city": (tags.get("addr:city") or area_city)[:100],
+                    "state": state_code(tags.get("addr:state")) or area_state})
+    out.sort(key=lambda c: (NAME_KINDS.index(c["kind"]), c["distance_m"]))
+    return out[:limit], (area_city, area_state)
+
+
 def state_code(value):
     """Two-letter code from 'IL', 'US-IL' or 'Illinois'; blank if unknown."""
     value = (value or "").strip()
@@ -202,3 +258,18 @@ def fill_site_places(max_lookups=None, fetch=None, now=None):
         if values:
             Site.objects.filter(pk=site.pk).update(**values)  # no rebuild needed: city/state do not affect counts
     return n
+
+
+def clear_covered_clusters(site):
+    """Remove landing clusters the site now covers (within its radius, or the cluster radius if larger), so they
+    leave the Cluster queue and the map at once. Clusters are derived: the next refresh would drop them too,
+    as those landings then resolve to the site. Returns how many were removed."""
+    if not site.is_active:
+        return 0
+    reach = max(site.radius_m, settings.CLUSTER_RADIUS_M)
+    pad = reach / 111_000 * 2  # degrees, generous for the longitude at these latitudes
+    near = LandingCluster.objects.filter(lat__range=(site.lat - pad, site.lat + pad),
+                                         lon__range=(site.lon - pad, site.lon + pad))
+    covered = [c.pk for c in near if haversine_m(site.lat, site.lon, c.lat, c.lon) <= reach]
+    LandingCluster.objects.filter(pk__in=covered).delete()
+    return len(covered)
