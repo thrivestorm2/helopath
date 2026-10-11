@@ -31,7 +31,7 @@
   <td class="lead"><a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a></td>
   <td data-label="Hex"><code>{{ a.icao_hex }}</code></td>
   <td data-label="Make / model">{{ a.make_model }}</td>
-  <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span></td>
+  <td data-label="Status"><span class="badge {{ a.status }}">{{ a.get_status_display }}</span>{% if a.retired %} <span class="badge rejected">retired</span>{% endif %}</td>
   <td data-label="Operator">{% if a.operator %}<a href="{% url 'operator_detail' a.operator_id %}">{{ a.operator }}</a>{% else %}—{% endif %}</td>
   <td data-label="Program">{% if a.program %}<a href="{% url 'program_detail' a.program_id %}">{{ a.program }}</a>{% else %}—{% endif %}</td>
   <td data-label="Base">{% if a.base %}<a href="{% url 'site_detail' a.base_id %}">{{ a.base.name }}</a>{% elif a.inferred_base %}<a href="{% url 'site_detail' a.inferred_base_id %}">{{ a.inferred_base.name }}</a> <em class="inferred">inferred</em>{% elif a.inferred_base_lat %}<span class="muted">unmatched location</span> <em class="inferred">inferred</em>{% else %}—{% endif %}</td>

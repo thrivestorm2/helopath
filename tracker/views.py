@@ -179,6 +179,7 @@ def aircraft_detail(request, pk):
     suggest_call_sign = admin and not aircraft.call_sign and not aircraft.call_sign_reviewed
     suggest_program = admin and not aircraft.program_id and not aircraft.program_reviewed
     return render(request, "tracker/aircraft_detail.html", {
+        "service_history": _service_history(aircraft),
         "lookup_links": lookup_links(aircraft),
         "suggest_call_sign": suggest_call_sign, "suggest_program": suggest_program,
         "call_sign_suggestions": call_sign_suggestions(aircraft, SOURCE) if suggest_call_sign else [],
@@ -187,6 +188,24 @@ def aircraft_detail(request, pk):
         "tracks": [{"id": leg.pk, "state": leg.end_state, "pts": [[p[0], p[1]] for p in leg.simplified_track]}
                    for leg in page],
     })
+
+
+def _service_history(aircraft):
+    """[(span, landings at sites, missions)] newest first; only when there is more than the current period."""
+    from .periods import spans
+    all_spans = spans(aircraft)
+    if len(all_spans) == 1 and not aircraft.retired:
+        return []
+    days = lambda qs, f: [local_day(ts) for ts in qs.values_list(f, flat=True)]  # noqa: E731
+    landings = days(aircraft.legs.filter(source=SOURCE, end_site__isnull=False), "end_ts")
+    missions = days(aircraft.missions.filter(source=SOURCE), "start_ts")
+    names = Operator.objects.in_bulk({s.operator_id for s in all_spans if s.operator_id})
+    programs = Program.objects.in_bulk({s.program_id for s in all_spans if s.program_id})
+    rows = []
+    for s in reversed(all_spans):
+        s.operator, s.program = names.get(s.operator_id), programs.get(s.program_id)
+        rows.append((s, sum(1 for d in landings if s.contains(d)), sum(1 for d in missions if s.contains(d))))
+    return rows
 
 
 @require_POST
@@ -360,8 +379,8 @@ def _route_rows(request, flows, limit=15, **scope):
 def route_map(request):
     get = request.GET
     qs = Mission.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request))
-    for param, field in (("origin", "origin_site"), ("dest", "destination_site"), ("operator", "aircraft__operator"),
-                         ("program", "aircraft__program")):
+    for param, field in (("origin", "origin_site"), ("dest", "destination_site"), ("operator", "operator"),
+                         ("program", "program")):  # operator/program of the service period on the mission date
         value = get.get(param, "")
         if value == "none":
             qs = qs.filter(**{f"{field}__isnull": True})
@@ -370,10 +389,9 @@ def route_map(request):
     if get.get("label") in dict(Mission.LABELS):
         qs = qs.filter(label=get["label"])
     if get.get("base") == "none":
-        qs = qs.filter(aircraft__base__isnull=True, aircraft__inferred_base__isnull=True)
+        qs = qs.filter(base__isnull=True)
     elif get.get("base", "").isdigit():
-        qs = qs.filter(Q(aircraft__base_id=get["base"]) | Q(aircraft__base__isnull=True,
-                                                             aircraft__inferred_base_id=get["base"]))
+        qs = qs.filter(base_id=get["base"])
     month = get.get("month", "")
     missions = {m.pk: m for m in qs.select_related("aircraft")
                 if not month or local_day(m.start_ts).strftime("%Y-%m") == month}
@@ -410,7 +428,7 @@ def program_detail(request, pk):
     can_delete = is_admin(request.user) and (request.user.is_superuser or not program.aircraft.exists())
     aircraft = (Aircraft.objects.filter(program=program, status__in=_statuses(request))
                 .select_related("operator", "base", "inferred_base").order_by(Aircraft.sort_name()))
-    missions = Mission.objects.filter(source=SOURCE, aircraft__program=program, aircraft__status__in=_statuses(request))
+    missions = Mission.objects.filter(source=SOURCE, program=program, aircraft__status__in=_statuses(request))
     labels = [code for code, _ in Mission.LABELS]
     per_month = defaultdict(Counter)
     flows = Counter()
@@ -508,7 +526,7 @@ def operator_detail(request, pk):
 def missions(request):
     qs = Mission.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request)).select_related(
         "aircraft", "aircraft__operator", "origin_site", "destination_site")
-    for param, field in (("label", "label"), ("aircraft", "aircraft_id"), ("operator", "aircraft__operator_id")):
+    for param, field in (("label", "label"), ("aircraft", "aircraft_id"), ("operator", "operator_id")):
         if request.GET.get(param):
             qs = qs.filter(**{field: request.GET[param]})
     if request.GET.get("min_conf"):

@@ -1,6 +1,6 @@
 {% extends "tracker/base.html" %}
 {% block content %}
-<h1>{% if aircraft.call_sign %}{{ aircraft.call_sign }} <span class="muted">({{ aircraft.tail_number }})</span>{% else %}{{ aircraft.tail_number }}{% endif %} <span class="badge {{ aircraft.status }}">{{ aircraft.get_status_display }}</span></h1>
+<h1>{% if aircraft.call_sign %}{{ aircraft.call_sign }} <span class="muted">({{ aircraft.tail_number }})</span>{% else %}{{ aircraft.tail_number }}{% endif %} <span class="badge {{ aircraft.status }}">{{ aircraft.get_status_display }}</span>{% if aircraft.retired %} <span class="badge rejected" title="Out of service since {{ aircraft.active_to }}">retired</span>{% endif %}</h1>
 {% if is_admin %}<p class="muted"><a href="{% url 'admin:tracker_aircraft_change' aircraft.pk %}?next={{ request.get_full_path|urlencode }}">Edit</a></p>{% endif %}
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
 <div class="card">
@@ -32,6 +32,24 @@
   </table>
 </div>
 </div>
+{% if service_history %}
+<div class="card" id="service-history">
+  <h2 style="margin-top:0">Service history</h2>
+  <div class="scroll"><table class="stack">
+  <tr class="head"><th>Dates</th><th>Base</th><th>Call sign</th><th>Operator</th><th>Program</th><th class="n">Landings</th><th class="n">Missions</th></tr>
+  {% for s, landings, missions in service_history %}
+  <tr><td class="lead nowrap">{{ s.start|date:"Y-m-d"|default:"start" }} – {% if s.end %}{{ s.end|date:"Y-m-d" }}{% else %}now{% endif %}
+      {% if s.current %}<span class="badge confirmed">{% if aircraft.retired %}last{% else %}current{% endif %}</span>{% endif %}</td>
+    <td data-label="Base">{% if s.base %}<a href="{% url 'site_detail' s.base.pk %}">{{ s.base.name }}</a>{% if s.base_inferred %} <em class="inferred">inferred</em>{% endif %}{% else %}—{% endif %}</td>
+    <td data-label="Call sign">{{ s.call_sign|default:"—" }}</td>
+    <td data-label="Operator">{% if s.operator %}<a href="{% url 'operator_detail' s.operator.pk %}">{{ s.operator }}</a>{% else %}—{% endif %}</td>
+    <td data-label="Program">{% if s.program %}<a href="{% url 'program_detail' s.program.pk %}">{{ s.program }}</a>{% else %}—{% endif %}</td>
+    <td class="n" data-label="Landings">{{ landings }}</td><td class="n" data-label="Missions">{{ missions }}</td></tr>
+  {% endfor %}
+  </table></div>
+  {% if aircraft.retired %}<p class="muted">Retired: flights after {{ aircraft.active_to }} are not counted.</p>{% endif %}
+</div>
+{% endif %}
 <div class="card" id="lookup">
   <h2 style="margin-top:0">Look it up</h2>
   <p class="muted">Search for {{ aircraft.tail_number }} on (opens in a new tab):</p>

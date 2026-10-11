@@ -12,7 +12,7 @@ from .models import Aircraft, Leg, Site
 def based_aircraft(site):
     """Visible aircraft based at the site: set by an admin, or inferred when no base was set."""
     return Aircraft.objects.filter(Q(base=site) | Q(base__isnull=True, inferred_base=site),
-                                   status__in=Aircraft.VISIBLE)
+                                   status__in=Aircraft.VISIBLE, retired=False)
 
 
 def suggest_hangars(site, source, limit=5):

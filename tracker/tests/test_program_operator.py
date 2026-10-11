@@ -1,3 +1,4 @@
+from tracker.tests import PERIODS_INLINE
 from importlib import import_module
 
 from django.apps import apps
@@ -48,7 +49,7 @@ class ProgramSetsOperatorTests(TestCase):
         change = reverse("admin:tracker_aircraft_change", args=[self.a.pk])
         page = self.client.get(change)
         data = {k: v for k, v in page.context["adminform"].form.initial.items() if v not in (None, False)}
-        data.update({"program": self.lf.pk, "_save": "Save"})
+        data.update({"program": self.lf.pk, "_save": "Save", **PERIODS_INLINE})
         r = self.client.post(change, data, follow=True)
         self.a.refresh_from_db()
         self.assertEqual(self.a.operator, self.am)
