@@ -8,6 +8,8 @@ from django.utils import timezone
 
 from tracker.models import Aircraft, Leg, Operator, Program, Site
 
+NO_QUALITY = "ADS-B quality: not enough data"  # too few flights in these fixtures to score
+
 
 class SiteMapTests(TestCase):
     def setUp(self):
@@ -43,15 +45,15 @@ class SiteMapTests(TestCase):
             "Base One": "base", "Base Empty": "base", "OSF St Francis": "hospital",  # a hospital base: hospital
             "Airport KPIA": "hangar", "Carle": "hospital"})
         self.assertEqual(m["Base One"]["info"], ["Peoria, IL", "Base · 1 aircraft: LIFE 1 (N911LF)", "Air Methods",
-                                                 "Weather hangar: Airport KPIA"])
+                                                 "Weather hangar: Airport KPIA", NO_QUALITY])
         self.assertEqual(m["OSF St Francis"]["info"][:3], ["0 landings in the last 90 days",
                                                            "Also a base · 1 aircraft: N2PH", "PHI"])
         self.assertIn("Hangar: at the base", m["OSF St Francis"]["info"])
         self.assertTrue(m["OSF St Francis"]["base_too"])  # drawn as a base when only Bases is on
         self.assertNotIn("base_too", m["Carle"])
         self.assertFalse(m["Base One"]["base_too"])
-        self.assertEqual(m["Airport KPIA"]["info"], ["Weather hangar for Base One"])
-        self.assertEqual(m["Carle"]["info"], ["1 landing in the last 90 days"])
+        self.assertEqual(m["Airport KPIA"]["info"], ["Weather hangar for Base One", NO_QUALITY])
+        self.assertEqual(m["Carle"]["info"], ["1 landing in the last 90 days", NO_QUALITY])
         self.assertEqual(m["Carle"]["url"], reverse("site_detail", args=[self.carle.pk]))
         self.assertEqual(r.context["shown"], ["base", "hospital", "hangar"])
         self.assertContains(r, 'id="map-markers"')
@@ -59,7 +61,7 @@ class SiteMapTests(TestCase):
     def test_filter_by_operator_and_program(self):
         m, _ = self.markers(operator=self.am.pk)
         self.assertEqual(set(m), {"Base One", "Airport KPIA", "Carle"})  # its base, hangar, hospitals it landed at
-        self.assertEqual(m["Carle"]["info"], ["1 landing in the last 90 days by these aircraft"])
+        self.assertEqual(m["Carle"]["info"], ["1 landing in the last 90 days by these aircraft", NO_QUALITY])
         m, _ = self.markers(program=self.lf.pk)
         self.assertEqual(set(m), {"Base One", "Airport KPIA", "Carle"})
         m, _ = self.markers(operator=self.phi.pk)

@@ -1,6 +1,9 @@
 {% extends "tracker/base.html" %}
 {% block content %}
 <h1>{{ site.name }}</h1>
+<p class="quality-line"><span class="quality-badge" style="background:{{ quality.color }}"
+   title="How well flights here are tracked, last {{ quality_days }} days. Landing seen 1, landing inferred ½, departure first seen on the ground 1, first seen airborne 0, signal lost within {{ quality_near_m|floatformat:0 }} m 0; averaged to 0-100.">ADS-B quality {{ quality.label }}</span>
+  <span class="muted">{{ quality.summary }} <span class="nowrap">(last {{ quality_days }} days)</span></span></p>
 <p class="muted site-meta">{{ site.get_site_type_display }}{% if site.city or site.state %} · {{ site.city }}{% if site.city and site.state %}, {% endif %}{{ site.state }}{% endif %}
   {% if site.faa_id %}· FAA {{ site.faa_id }}{% endif %} · radius {{ site.radius_m }} m ·
   {% if site.reviewed %}reviewed{% else %}not yet reviewed{% endif %}{% if not site.is_active %} · <strong>inactive</strong>{% endif %}
