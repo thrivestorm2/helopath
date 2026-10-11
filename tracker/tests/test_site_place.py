@@ -69,8 +69,14 @@ class SitePlaceViewTests(TestCase):
         with mock.patch.object(places, "fetch_overpass", side_effect=fake_fetch):
             self.assertEqual(self.client.get(self.url, {"lat": 41, "lon": -90}).json(),
                              {"city": "Peoria", "state": "IL", "error": ""})
-        with mock.patch.object(places, "fetch_overpass", side_effect=broken_fetch):
-            self.assertEqual(self.client.get(self.url, {"lat": 41, "lon": -90}).json()["error"], "lookup failed")
+        with mock.patch.object(places, "fetch_overpass", side_effect=broken_fetch), \
+                mock.patch.object(places, "fetch_nominatim_place", return_value=("Waukesha", "WI")):
+            self.assertEqual(self.client.get(self.url, {"lat": 41, "lon": -90}).json(),
+                             {"city": "Waukesha", "state": "WI", "error": ""})  # second source
+        with mock.patch.object(places, "fetch_overpass", side_effect=broken_fetch), \
+                mock.patch.object(places, "fetch_nominatim_place", side_effect=OSError("down too")):
+            self.assertEqual(self.client.get(self.url, {"lat": 41, "lon": -90}).json()["error"],
+                             "City/state lookup failed: down too")
         self.assertEqual(self.client.get(self.url, {"lat": "x"}).status_code, 400)
 
     def test_viewers_cannot(self):
@@ -137,11 +143,16 @@ class SiteNameTests(TestCase):
         PlaceSuggestion.objects.create(lat3="40.000", lon3="-89.000", name="Cached Hospital", city="Pekin",
                                        state="IL", candidates=[{"name": "Cached Hospital", "kind": "hospital",
                                                                 "distance_m": 40}])
-        with mock.patch.object(places, "fetch_overpass", side_effect=broken_fetch):
+        with mock.patch.object(places, "fetch_overpass", side_effect=broken_fetch), \
+                mock.patch.object(places, "fetch_nominatim_place", return_value=("Waukesha", "WI")):
             d = self.client.get(url, {"lat": 40, "lon": -89, "names": 1}).json()
             self.assertEqual([n["name"] for n in d["names"]], ["Cached Hospital"])
             self.assertEqual(d["names"][0]["site_type"], "hospital_helipad")
-            self.assertEqual(self.client.get(url, {"lat": 41, "lon": -90, "names": 1}).json()["error"], "lookup failed")
+            self.assertEqual((d["city"], d["error"]), ("Pekin", ""))
+            # Nothing cached: no names, the reason is shown, and city/state still come from the second source.
+            d = self.client.get(url, {"lat": 43.0902, "lon": -88.1785, "names": 1}).json()
+            self.assertEqual((d["names"], d["city"], d["state"]), ([], "Waukesha", "WI"))
+            self.assertEqual(d["error"], "Nearby names unavailable: overpass down")
 
     def test_add_form_offers_names_edit_form_does_not(self):
         self.client.force_login(User.objects.create_superuser("root", password="x"))
@@ -171,3 +182,39 @@ class CreateFromQueueTests(TestCase):
         self.assertContains(r, "New Base replaces 1 landing spot in the Cluster queue.")
         self.assertFalse(LandingCluster.objects.filter(pk=spot.pk).exists())
         self.assertEqual([c.pk for c in r.context["clusters"]], [other.pk])
+
+
+class OverpassMirrorTests(TestCase):
+    def test_tries_the_next_server_and_reports_why_all_failed(self):
+        import io
+        import urllib.error
+
+        calls = []
+
+        def opener(req, timeout):
+            calls.append((req.full_url, timeout))
+            if "overpass-api.de" in req.full_url:
+                raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+            return io.BytesIO(b'{"elements": []}')
+
+        self.assertEqual(places.fetch_overpass("q", opener=opener), {"elements": []})
+        self.assertEqual([u for u, _ in calls], places.OVERPASS_URLS[:2])
+        self.assertEqual(calls[0][1], places.OVERPASS_TIMEOUT_S)
+
+        def down(req, timeout):
+            if "kumi" in req.full_url:
+                raise TimeoutError("timed out")
+            raise urllib.error.HTTPError(req.full_url, 504, "Gateway Timeout", {}, None)
+
+        with self.assertRaises(places.LookupError_) as e:
+            places.fetch_overpass("q", opener=down)
+        self.assertEqual(str(e.exception), "OpenStreetMap lookup failed (overpass-api.de: timed out; "
+                                           "overpass.kumi.systems: timed out; overpass.private.coffee: timed out)")
+
+    def test_nominatim_city_state(self):
+        import io
+        import json
+
+        body = {"address": {"town": "Menomonee Falls", "state": "Wisconsin", "ISO3166-2-lvl4": "US-WI"}}
+        opener = lambda req, timeout: io.BytesIO(json.dumps(body).encode())  # noqa: E731
+        self.assertEqual(places.fetch_nominatim_place(43.0902, -88.1785, opener=opener), ("Menomonee Falls", "WI"))

@@ -108,13 +108,21 @@
     fetch('{% url "site_place" %}?lat=' + encodeURIComponent(lat.value) + '&lon=' + encodeURIComponent(lon.value)
           + (adding ? '&names=1' : ''), {credentials: 'same-origin'}).then(r => r.json()).then(d => {
       if (ticket !== pending) return;  // the point moved again
-      if (d.error) { note.textContent = 'Lookup failed; type them in (city and state are filled later if left blank).'; return; }
       want.forEach(([el, k]) => setAuto(el, k, d[k]));
       showNames(d.names);
+      if (d.error) {
+        // Say why, and offer another try (OpenStreetMap's servers are sometimes busy for a minute).
+        note.textContent = d.error + ((d.city || d.state) ? ' City and state were filled from another source. ' : ' ');
+        const again = document.createElement('button');
+        again.type = 'button'; again.className = 'button'; again.textContent = 'Try again';
+        again.addEventListener('click', fillPlace);
+        note.appendChild(again);
+        return;
+      }
       const found = (d.city || d.state) ? 'City and state filled from the map location (OpenStreetMap).'
                                         : 'No city found at this location; leave blank or type one.';
       note.textContent = adding && d.names && !d.names.length ? found + ' No named place nearby.' : found;
-    }).catch(() => { if (ticket === pending) note.textContent = ''; });
+    }).catch(() => { if (ticket === pending) note.textContent = 'Lookup did not answer; type the details in, or try again.'; });
   }
   [lat, lon].forEach(el => el.addEventListener('change', fillPlace));
   map.on('click', fillPlace);
