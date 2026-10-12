@@ -25,8 +25,23 @@
   </ol>
   <div class="muted">After that, everything runs by itself: the worker ingests each new day after {{ nightly_at }}.</div>
   <form method="post" class="filters" style="margin-top:10px">{% csrf_token %}
-    <button name="kind" value="rebuild">Rebuild</button><span class="muted">after editing sites or thresholds, to apply the changes.</span></form>
+    <button name="kind" value="rebuild">Full rebuild now</button><span class="muted">Edits to sites, hangars and service
+      periods apply on their own within a few minutes; full rebuilds run at {{ full_rebuild_at }} (local time) when
+      one is due, and every {{ full_rebuild_weekday }} as a safety net.</span></form>
 </div>
+
+<h2>Recent rebuilds</h2>
+<div class="scroll"><table class="stack">
+<tr class="head"><th>Started</th><th>Kind</th><th>Why</th><th class="n">Aircraft re-derived</th><th class="n">Took</th><th>Steps</th></tr>
+{% for r in rebuild_runs %}
+<tr><td class="lead nowrap">{{ r.started_at|date:"Y-m-d H:i" }}</td>
+  <td data-label="Kind">{{ r.get_kind_display }}{% if not r.ok %} <span class="badge failed">failed</span>{% endif %}</td>
+  <td class="wrap" data-label="Why">{{ r.reason|default:"—"|truncatechars:120 }}</td>
+  <td class="n" data-label="Aircraft re-derived">{{ r.aircraft_rebuilt|default_if_none:"—" }}</td>
+  <td class="n nowrap" data-label="Took">{% if r.seconds is not None %}{{ r.seconds|floatformat:0 }} s{% else %}running{% endif %}</td>
+  <td class="muted wrap" data-label="Steps">{% for name, secs in r.steps %}{{ name }} {{ secs|floatformat:0 }} s{% if not forloop.last %} · {% endif %}{% endfor %}</td></tr>
+{% empty %}<tr><td colspan="6" class="muted empty-row">No rebuilds recorded yet.</td></tr>{% endfor %}
+</table></div>
 
 <h2>Recent tasks</h2>
 <div class="scroll"><table>

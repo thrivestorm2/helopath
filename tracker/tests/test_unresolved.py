@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from tracker.models import Aircraft, LandingCluster, Leg, Site, WorkerState
+from tracker.models import Aircraft, LandingCluster, Leg, Site
 from tracker.resolution import category_metrics, diagnose, radius_suggestions
 
 NOW = timezone.now() - timedelta(days=2)
@@ -75,7 +75,9 @@ class UnresolvedTests(UnresolvedData):
         self.hosp.refresh_from_db()
         self.assertEqual(self.hosp.radius_m, 850)
         self.assertContains(r, "radius 300 m → 850 m")
-        self.assertIn("radius of Hospital A", WorkerState.get().rebuild_reason)  # banner asks for a rebuild
+        from tracker.models import PendingRebuild
+        self.assertEqual(list(PendingRebuild.objects.values_list("kind", "reason", "radius_m")),
+                         [("partial", "radius of Hospital A", 850)])  # a quick partial rebuild follows
         self.client.post(reverse("set_site_radius", args=[self.hosp.pk]), {"radius_m": 99999})
         self.hosp.refresh_from_db()
         self.assertEqual(self.hosp.radius_m, 850)

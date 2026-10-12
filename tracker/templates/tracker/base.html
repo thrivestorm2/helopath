@@ -35,7 +35,7 @@
 <main class="{% block main_class %}{% endblock %}">
   {% if rebuild_banner %}{% if rebuild_banner.0 == "running" %}
   <div class="rebuild-banner running" role="status" data-status-url="{% url 'rebuild_status' %}">
-    <span>Rebuild in progress: <strong class="rebuild-step">{{ rebuild_banner.1 }}</strong>. Figures are incomplete until it finishes.</span>
+    <span>{{ rebuild_banner.3 }} in progress: <strong class="rebuild-step">{{ rebuild_banner.1 }}</strong>. Figures are incomplete until it finishes.</span>
     <div class="rebuild-progress">
       <span class="spinner" aria-hidden="true"></span>
       <div class="bar" role="progressbar" aria-label="Rebuild progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ rebuild_banner.2 }}"><div class="fill" style="width:{{ rebuild_banner.2 }}%"></div></div>
@@ -43,8 +43,9 @@
     </div>
   </div>{% else %}
   <div class="rebuild-banner" role="status">
-    <span>Rebuild needed to apply recent changes: {{ rebuild_banner.1 }}.</span>
-    <form method="post" action="{% url 'queue_rebuild' %}" onsubmit="this.querySelector('button').disabled = true">{% csrf_token %}<input type="hidden" name="source" value="adsblol"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="primary">Queue rebuild</button></form>
+    {% if rebuild_banner.1 %}<span>Figures update on their own in about {{ rebuild_banner.3 }} minute{{ rebuild_banner.3|pluralize }} for recent changes: {{ rebuild_banner.1 }}.</span>{% endif %}
+    {% if rebuild_banner.2 %}<span>Full rebuild scheduled for tonight: {{ rebuild_banner.2 }}.</span>
+    <form method="post" action="{% url 'queue_rebuild' %}" onsubmit="this.querySelector('button').disabled = true">{% csrf_token %}<input type="hidden" name="source" value="adsblol"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="primary">Run now</button></form>{% endif %}
   </div>{% endif %}{% endif %}
   {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
   {% block content %}{% endblock %}

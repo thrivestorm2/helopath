@@ -426,6 +426,44 @@ class RebuildRequest(models.Model):
     processed_at = models.DateTimeField(null=True, blank=True)
 
 
+class PendingRebuild(models.Model):
+    """An edit waiting to be applied (tracker.rebuild_flag): a recount, a partial rebuild around a site's location,
+    or a full rebuild. Recounts and partials run on their own shortly after the last edit; full ones overnight."""
+
+    RECOUNT, PARTIAL, FULL = "recount", "partial", "full"
+    KINDS = [(RECOUNT, "Recount"), (PARTIAL, "Partial rebuild"), (FULL, "Full rebuild")]
+
+    kind = models.CharField(max_length=10, choices=KINDS)
+    reason = models.CharField(max_length=200)
+    lat = models.FloatField(null=True, blank=True)       # partial: a site location (old or new)
+    lon = models.FloatField(null=True, blank=True)
+    radius_m = models.FloatField(null=True, blank=True)  # that site's radius there
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    processed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class RebuildRun(models.Model):
+    """One recount, partial or full rebuild as it ran, with how long each step took (Operations page)."""
+
+    kind = models.CharField(max_length=10, choices=PendingRebuild.KINDS)
+    reason = models.CharField(max_length=300, blank=True)
+    aircraft_rebuilt = models.PositiveIntegerField(null=True, blank=True)  # aircraft whose legs were re-derived
+    steps = models.JSONField(default=list)  # [[step, seconds], ...] in order
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    ok = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    @property
+    def seconds(self):
+        return (self.finished_at - self.started_at).total_seconds() if self.finished_at else None
+
+
 class CoverageComparison(models.Model):
     """Milestone 8: per-source figures on the same day, for deciding whether to buy data."""
 
@@ -497,10 +535,10 @@ class WorkerState(models.Model):
     heartbeat = models.DateTimeField(null=True, blank=True)
     last_nightly = models.DateField(null=True, blank=True)
     current = models.CharField(max_length=200, blank=True)
-    # "Rebuild needed" banner (tracker.rebuild_flag): edits waiting for a rebuild, and the counting-rules version
-    # the last queued rebuild applied.
-    rebuild_reason = models.CharField(max_length=300, blank=True)
+    # The counting-rules version the last full rebuild applied (tracker.rebuild_flag), and the overnight slot.
     rules_version = models.PositiveIntegerField(default=0)
+    last_overnight = models.DateField(null=True, blank=True)  # local date the overnight check last ran
+    last_full_rebuild = models.DateTimeField(null=True, blank=True)
 
     @classmethod
     def get(cls):

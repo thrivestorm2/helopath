@@ -42,10 +42,15 @@ def run_task(task: OpsTask):
                 csv_bytes = download_apt_base(utc_today(), log=log)
             created, updated, skipped = seed_sites(io.BytesIO(csv_bytes))
             log(f"sites created {created}, updated {updated}, skipped {skipped} (already reviewed)")
+            if created or updated:
+                from .rebuild_flag import flag_full
+                flag_full("FAA sites seeded")
+                log("full rebuild scheduled for tonight to apply them")
         elif task.kind == OpsTask.BACKFILL:
             run_backfill(settings.BACKFILL_DAYS, log=log)
         elif task.kind == OpsTask.REBUILD:
-            log(str(pipeline.rebuild(settings.PRIMARY_SOURCE, progress=log)))
+            from .rebuilds import run_full
+            log(str(run_full(settings.PRIMARY_SOURCE, "requested from Operations", progress=log)))
         elif task.kind == OpsTask.REFRESH:
             src = settings.PRIMARY_SOURCE
             log(f"auto-confirmed {apply_auto_confirm_rules()} aircraft by rule")
@@ -78,6 +83,8 @@ def queue_refresh(user=None):
 
 def recover_interrupted():
     """After a worker restart: resume an interrupted backfill (it is resumable); fail anything else."""
+    from .models import RebuildRun
+    RebuildRun.objects.filter(finished_at__isnull=True).update(finished_at=timezone.now(), ok=False)
     for task in OpsTask.objects.filter(status=OpsTask.RUNNING):
         task.log += f"{timezone.now():%H:%M:%S} worker restarted during this task\n"
         task.status = OpsTask.QUEUED if task.kind == OpsTask.BACKFILL else OpsTask.FAILED

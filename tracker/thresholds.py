@@ -117,6 +117,14 @@ PRIMARY_SOURCE = "adsblol"
 # Background worker: when the daily ingest runs (UTC). adsb.lol publishes a day during the following day.
 NIGHTLY_UTC_HOUR = _env("NIGHTLY_UTC_HOUR", 18)
 NIGHTLY_UTC_MINUTE = _env("NIGHTLY_UTC_MINUTE", 30)
+# Rebuilds (tracker.rebuild_flag): recounts and partial rebuilds run this long after the last edit (several quick
+# edits share one run); a partial touching more than this share of aircraft waits for the overnight full rebuild.
+QUICK_UPDATE_DELAY_S = _env("QUICK_UPDATE_DELAY_S", 120)
+PARTIAL_MAX_SHARE = _env("PARTIAL_MAX_SHARE", 0.4)
+# Full rebuilds run on their own only overnight (local time, TIME_ZONE): when one is pending, and every week as a
+# safety net on this weekday (Monday 0 ... Sunday 6).
+FULL_REBUILD_LOCAL_HOUR = _env("FULL_REBUILD_LOCAL_HOUR", 2)
+FULL_REBUILD_WEEKDAY = _env("FULL_REBUILD_WEEKDAY", 6)
 
 # Landing-cluster name suggestions from OpenStreetMap (tracker/places.py).
 PLACE_LOOKUP_MIN_LANDINGS = _env("PLACE_LOOKUP_MIN_LANDINGS", 20)   # clusters with MORE landings than this

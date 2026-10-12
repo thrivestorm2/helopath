@@ -17,7 +17,7 @@ from .models import Aircraft, AutoConfirmRule, Operator, Program, ServicePeriod,
 from .ops import queue_refresh
 from .faa import merge_duplicate_faa_sites
 from .places import clear_covered_clusters
-from .rebuild_flag import flag_rebuild
+from .rebuild_flag import QUICK_NOTE, flag_recount, flag_site, flag_site_change
 
 admin.site.site_header = "Air Medical Tracker admin"
 admin.site.site_title = "Air Medical Tracker"
@@ -77,19 +77,22 @@ class AircraftResource(resources.ModelResource):
 
 @admin.action(description="Deactivate selected sites")
 def deactivate(modeladmin, request, queryset):
+    active = list(queryset.filter(is_active=True))
     n = queryset.update(is_active=False)
     for obj in queryset:
         modeladmin.log_change(request, obj, "Deactivated")
-    if n:
-        flag_rebuild(f"{n} site{'s' if n != 1 else ''} deactivated")
-    modeladmin.message_user(request, f"Deactivated {n} site(s). Takes effect after the next rebuild.")
+    for obj in active:
+        flag_site(f"site {obj.name} deactivated", (obj.lat, obj.lon, obj.radius_m))
+    modeladmin.message_user(request, f"Deactivated {n} site(s)." + (QUICK_NOTE if active else ""))
 
 
 @admin.action(description="Mark selected sites reviewed")
 def mark_reviewed(modeladmin, request, queryset):
-    queryset.update(reviewed=True)
+    n = queryset.filter(reviewed=False).update(reviewed=True)
     for obj in queryset:
         modeladmin.log_change(request, obj, "Marked reviewed")
+    if n:  # flows count reviewed and unreviewed sites separately
+        flag_recount(f"{n} site{'s' if n != 1 else ''} marked reviewed")
 
 
 @admin.register(Site)
@@ -113,15 +116,17 @@ class SiteAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         return False
 
     def save_model(self, request, obj, form, change):
+        old = Site.objects.filter(pk=obj.pk).first() if change else None
         super().save_model(request, obj, form, change)
-        flag_rebuild(f"site {obj.name} {'edited' if change else 'added'}")
+        flagged = flag_site_change(old, obj, set(form.changed_data))
         for keep, names in merge_duplicate_faa_sites():
             messages.success(request, f"Merged {', '.join(names)} into {keep.name}: same FAA ID {keep.faa_id}.")
         cleared = clear_covered_clusters(obj) if Site.objects.filter(pk=obj.pk).exists() else 0
         if cleared:
             messages.success(request, f"{obj.name} replaces {cleared} landing spot{'s' if cleared != 1 else ''} "
                                       "in the Cluster queue.")
-        messages.warning(request, "Site changes take effect after the next rebuild (see the banner at the top).")
+        if flagged:
+            messages.info(request, QUICK_NOTE.strip())
 
 
 @admin.register(Operator)
@@ -253,7 +258,7 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
                    f"and program, no base or call sign.")
         else:
             return
-        flag_rebuild(f"service period changed for {obj.tail_number}")
+        flag_recount(f"service period changed for {obj.tail_number}")
         self.message_user(request, msg)
 
     def has_delete_permission(self, request, obj=None):

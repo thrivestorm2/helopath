@@ -45,7 +45,8 @@ from .operators import absorb_operator
 from .ops import queue_refresh
 from .quality import site_quality
 from .resolution import CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, radius_suggestions
-from .rebuild_flag import flag_rebuild, progress_percent, rebuild_active, rebuild_progress, rebuild_queued
+from .rebuild_flag import (QUICK_NOTE, flag_recount, flag_site, progress_percent, rebuild_active, rebuild_progress,
+                           rebuild_queued, running_kind)
 from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
 
@@ -468,9 +469,8 @@ def set_weather_hangar(request, pk):
     site.save(update_fields=["weather_hangar", "updated"])
     what = "the base itself" if hangar == site else hangar.name if hangar else None
     _log(request.user, site, f"Weather hangar set to {what or 'none'}")
-    flag_rebuild(f"weather hangar for {site.name}")
-    messages.success(request, f"Weather hangar {f'set to {what}' if hangar else 'cleared'}. "
-                              "Missions change after the next rebuild.")
+    flag_recount(f"weather hangar for {site.name}")
+    messages.success(request, f"Weather hangar {f'set to {what}' if hangar else 'cleared'}." + QUICK_NOTE)
     return redirect("site_detail", pk=site.pk)
 
 
@@ -715,7 +715,7 @@ def unresolved_csv(request):
 @require_POST
 @admin_required
 def set_site_radius(request, pk):
-    """One-tap "widen radius" from the unresolved-legs page; takes effect after a rebuild."""
+    """One-tap "widen radius" from the unresolved-legs page; applied by the quick update that follows."""
     site = get_object_or_404(Site, pk=pk)
     try:
         radius = int(request.POST["radius_m"])
@@ -728,8 +728,8 @@ def set_site_radius(request, pk):
         site.radius_m = radius
         site.save(update_fields=["radius_m", "updated"])
         _log(request.user, site, f"Radius {old} m -> {radius} m (unresolved legs page)")
-        flag_rebuild(f"radius of {site.name}")
-        messages.success(request, f"{site.name}: radius {old} m → {radius} m. Takes effect after the rebuild.")
+        flag_site(f"radius of {site.name}", (site.lat, site.lon, max(old, radius)))
+        messages.success(request, f"{site.name}: radius {old} m → {radius} m." + QUICK_NOTE)
     return redirect(reverse("unresolved") + "#radius")
 
 
@@ -964,7 +964,7 @@ def rebuild_status(request):
     """For the progress banner: {"active": bool, "step": what the rebuild is doing, "percent": 0-100}."""
     step = rebuild_progress()
     return JsonResponse({"active": step is not None, "step": step or "",
-                         "percent": progress_percent(step) if step else 100})
+                         "percent": progress_percent(step, running_kind()) if step else 100})
 
 
 @admin_required
@@ -987,7 +987,7 @@ def operations(request):
     from django.conf import settings as dj_settings
 
     from . import rawstore
-    from .models import OpsTask, WorkerState
+    from .models import OpsTask, RebuildRun, WorkerState
 
     if request.method == "POST":
         kind = request.POST.get("kind")
@@ -1024,6 +1024,10 @@ def operations(request):
         "raw": rawstore.stats(SOURCE),
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
         "nightly_at": f"{dj_settings.NIGHTLY_UTC_HOUR:02d}:{dj_settings.NIGHTLY_UTC_MINUTE:02d} UTC",
+        "rebuild_runs": RebuildRun.objects.all()[:10],
+        "full_rebuild_at": f"{dj_settings.FULL_REBUILD_LOCAL_HOUR}:00",
+        "full_rebuild_weekday": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+                                 "Sunday"][dj_settings.FULL_REBUILD_WEEKDAY],
     })
 
 

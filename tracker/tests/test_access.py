@@ -64,7 +64,7 @@ class AccessTests(TestCase):
         entry = LogEntry.objects.get(object_id=str(self.site.pk))
         self.assertEqual(entry.user, self.admin)
         r = self.client.get(r["Location"])
-        self.assertContains(r, "Site changes take effect after the next rebuild")
+        self.assertContains(r, "Figures update on their own in about 2 minutes")
 
     def test_admin_cannot_delete_sites(self):
         self.client.force_login(self.admin)
