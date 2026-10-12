@@ -9,6 +9,7 @@
   {% include "tracker/_confirmed_toggle.html" %}
   <button>Apply</button>
   {% if is_admin %}<a class="button" href="{% url 'admin:tracker_site_add' %}">Add site</a>{% endif %}
+  {% if user.is_superuser %}<a class="button" href="{% url 'site_import' %}">Import from CSV</a>{% endif %}
 </form>
 {% if view == 'map' %}
 <div id="map"></div>

@@ -168,6 +168,46 @@ def aircraft_list(request):
     })
 
 
+def site_import(request):
+    """Super admins: import sites from a CSV (see tracker.site_import). Upload shows a preview to tick; Import
+    applies the ticked rows. Nothing is saved until Import."""
+    from . import site_import as imp
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    if request.method == "POST" and request.POST.get("action") == "import":
+        stored = request.session.get("site_import")
+        if not stored:
+            messages.error(request, "That preview expired; upload the file again.")
+            return redirect("site_import")
+        wanted = set(request.POST.getlist("row"))
+        rows = [r for r in imp.analyse(imp.read_csv(stored["text"]), coords=stored["coords"])
+                if str(r.n) in wanted and r.selectable]
+        created, updated = imp.apply(rows, request.user)
+        del request.session["site_import"]
+        messages.success(request, f"Imported: {created} site{'s' if created != 1 else ''} added, {updated} updated."
+                         + (QUICK_NOTE if created or updated else ""))
+        return redirect("site_list")
+    rows, error = None, ""
+    if request.method == "POST":
+        upload = request.FILES.get("file")
+        try:
+            text = upload.read().decode("utf-8-sig") if upload else ""
+            if not text.strip():
+                raise ValueError("Choose a CSV file.")
+            coords = {}
+            rows = imp.analyse(imp.read_csv(text), coords=coords)
+            request.session["site_import"] = {"text": text, "coords": coords}
+        except UnicodeDecodeError:
+            error = "That file isn't a text CSV (save it as CSV UTF-8)."
+        except (ValueError, csv.Error) as e:
+            error = str(e)
+    return render(request, "tracker/site_import.html", {
+        "rows": rows, "error": error, "columns": imp.COLUMNS,
+        "counts": list(Counter(("outside" if r.outside and r.status in ("new", "update") else r.status)
+                               for r in rows).items()) if rows else [],
+    })
+
+
 @admin_required
 def aircraft_lookup(request):
     """For the admin's new-aircraft form: what is known about a tail number or hex as it is typed. The hex of a

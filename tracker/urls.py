@@ -13,6 +13,7 @@ urlpatterns = [
     path("sites/", views.site_list, name="site_list"),
     path("sites/place/", views.site_place, name="site_place"),
     path("aircraft/lookup/", views.aircraft_lookup, name="aircraft_lookup"),
+    path("sites/import/", views.site_import, name="site_import"),
     path("sites/faa/", views.faa_facility, name="faa_facility"),
     path("sites/<int:pk>/", views.site_detail, name="site_detail"),
     path("sites/<int:pk>/hangar/", views.set_weather_hangar, name="set_weather_hangar"),
