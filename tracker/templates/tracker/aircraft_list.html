@@ -53,7 +53,8 @@
   {% endwith %}{% else %}
   <p>Not tracked yet, and not in the FAA registry's helicopter list (planes are not in it).</p>
   <a class="button primary" href="{{ add_offer.url }}">Add aircraft</a>
-  <span class="muted">You'll need its hex (Mode S) code: <a href="https://registry.faa.gov/aircraftinquiry/Search/NNumberInquiry" target="_blank" rel="noopener">look it up on the FAA registry ↗</a>.</span>
+  {% if add_offer.hex %}<span class="muted">Its hex code <code>{{ add_offer.hex }}</code> is worked out from the US tail number.</span>
+  {% else %}<span class="muted">You'll need its hex (Mode S) code: <a href="https://registry.faa.gov/aircraftinquiry/Search/NNumberInquiry" target="_blank" rel="noopener">look it up on the FAA registry ↗</a>.</span>{% endif %}
   {% endif %}
 </div>{% endif %}
 {% include "tracker/_pager.html" %}
