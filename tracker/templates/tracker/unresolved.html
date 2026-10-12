@@ -5,7 +5,9 @@
 <div class="grid">
   <div class="card stat headline"><div class="k">Resolved-landing rate now</div>
     <div class="v">{% if d.rate is not None %}{% widthratio d.resolved d.total 100 %}%{% else %}—{% endif %}</div>
-    <div class="muted">{{ d.resolved|intcomma }} / {{ d.total|intcomma }} legs</div></div>
+    <div class="muted">{{ d.resolved|intcomma }} / {{ d.total|intcomma }} legs in the study area{% if d.seen_departing %}
+      <span class="nowrap">(incl. {{ d.seen_departing|intcomma }} lost but seen departing a site afterwards)</span>{% endif %}{% if d.outside %};
+      <span class="nowrap">{{ d.outside|intcomma }} outside it, not counted</span>{% endif %}</div></div>
   <div class="card stat"><div class="k">If the fixable ones were fixed</div>
     <div class="v">{% if d.best_rate is not None %}{% widthratio d.resolved|add:d.fixable d.total 100 %}%{% else %}—{% endif %}</div>
     <div class="muted">{{ d.fixable|intcomma }} more legs resolved</div></div>
@@ -20,7 +22,7 @@
 {% for m in metrics %}
 <tr data-href="?{% if confirmed_only %}confirmed=1&amp;{% endif %}cat={{ m.key }}#legs"><td class="lead wrap"><a href="?{% if confirmed_only %}confirmed=1&amp;{% endif %}cat={{ m.key }}#legs">{{ m.title }}</a>
   <div class="muted cause-text">{{ m.text }}</div></td>
-  <td class="n" data-label="Legs">{{ m.legs|intcomma }}</td><td class="n" data-label="Share of all legs">{% widthratio m.share 1 100 %}%</td>
+  <td class="n" data-label="Legs">{{ m.legs|intcomma }}</td><td class="n" data-label="Share of all legs">{% if m.key == "outside_area" %}<span class="muted" title="Not counted in the rate">not counted</span>{% else %}{% widthratio m.share 1 100 %}%{% endif %}</td>
   <td class="n" data-label="Aircraft">{{ m.aircraft|intcomma }}</td>
   <td class="n" data-label="Nearest site (median)">{{ m.median_nearest }}</td>
   <td class="n" data-label="Height (median)">{% if m.median_agl_ft is not None %}{{ m.median_agl_ft|floatformat:0|intcomma }} ft{% else %}—{% endif %}</td>

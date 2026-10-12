@@ -25,7 +25,7 @@ class UnresolvedCsvTests(UnresolvedData):
         rows, r = self.rows()
         self.assertIn("helopath-unresolved-", r["Content-Disposition"])
         self.assertEqual(len(rows), 8)  # 9 legs, 1 resolved
-        self.assertIn("8 of 9 legs", r.content.decode().splitlines()[0])
+        self.assertIn("8 listed; 9 legs end inside the study area", r.content.decode().splitlines()[0])
         near = [row for row in rows if row["category"] == "near_site"]
         self.assertEqual(len(near), 3)
         self.assertEqual({(x["nearest_site"], x["nearest_site_radius_m"], x["suggested_radius_m"], x["nearest_faa_id"])

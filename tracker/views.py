@@ -1,8 +1,10 @@
 import csv
+import math
 import re
 from urllib.parse import urlencode
 from collections import Counter, defaultdict
 from datetime import timedelta
+from statistics import median
 
 from django.conf import settings
 from django.contrib import messages
@@ -21,7 +23,7 @@ from django.views.decorators.http import require_POST
 from .inference.pipeline import local_day
 from . import places
 from .faa import faa_near
-from .geo import SiteIndex
+from .geo import SiteIndex, haversine_m
 from .hangars import based_aircraft, suggest_hangars
 from .lookup import call_sign_suggestions, lookup_links, program_suggestions
 from .models import (
@@ -44,7 +46,8 @@ from .models import (
 from .operators import absorb_operator
 from .ops import queue_refresh
 from .quality import site_quality
-from .resolution import CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, radius_suggestions
+from .resolution import (CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, landing_rate, next_legs,
+                         radius_suggestions)
 from .rebuild_flag import (QUICK_NOTE, flag_recount, flag_site, progress_percent, rebuild_active, rebuild_progress,
                            rebuild_queued, running_kind)
 from .roles import admin_required, is_admin
@@ -92,9 +95,8 @@ def medical_legs(request, days=None):
 
 
 def resolved_rate(legs):
-    total = legs.count()
-    resolved = legs.filter(end_site__isnull=False).count()
-    return (resolved / total if total else None), resolved, total
+    """(rate, resolved, total): see resolution.landing_rate (legs ending inside the study area)."""
+    return landing_rate(legs, SOURCE)
 
 
 def dashboard(request):
@@ -651,7 +653,7 @@ UNRESOLVED_CSV_COLUMNS = [
     "spot_lat", "spot_lon", "spot_landings", "spot_dismissed",
     "aircraft", "hex", "aircraft_status", "operator", "program", "base", "base_is_inferred", "inferred_base_lat",
     "inferred_base_lon", "started_utc", "start_site", "start_lat", "start_lon", "minutes", "gaps_bridged",
-    "callsign", "confidence"]
+    "callsign", "confidence", "next_started_utc", "next_gap_minutes", "next_start_site", "next_start_km"]
 
 
 @admin_required
@@ -663,6 +665,8 @@ def unresolved_csv(request):
     category = request.GET.get("cat", "")
     rows = sorted((r for r in d.rows if not category or r.category == category), key=lambda r: r.end_ts)
     legs = Leg.objects.select_related("start_site").in_bulk([r.pk for r in rows])
+    after = next_legs([(r.pk, r.hex, r.end_ts) for r in rows], SOURCE)  # where each aircraft was next seen
+    next_sites = Site.objects.in_bulk({n[1] for n in after.values() if n[1]})
     planes = Aircraft.objects.select_related("operator", "program", "base", "inferred_base").in_bulk(
         {r.aircraft_id for r in rows if r.aircraft_id})
     suggested = {site.pk: radius for site, _, radius, _ in radius_suggestions(d, limit=None)}
@@ -679,8 +683,9 @@ def unresolved_csv(request):
                                    f'{"-" + category if category else ""}.csv"')
     w = csv.writer(resp)
     w.writerow(["# Contains data from adsb.lol, made available under the Open Database License (ODbL). "
-                f"Unresolved legs, last 90 days: {len(rows):,} of {d.total:,} legs "
-                f"(resolved {d.resolved:,}). Missions are inferred; no patient information."])
+                f"Unresolved legs, last 90 days: {len(rows):,} listed; {d.total:,} legs end inside the study area "
+                f"(resolved {d.resolved:,}, of which {d.seen_departing:,} seen departing a site afterwards), "
+                f"{d.outside:,} outside it. Missions are inferred; no patient information."])
     w.writerow(UNRESOLVED_CSV_COLUMNS)
 
     def num(x, digits=0):
@@ -708,8 +713,19 @@ def unresolved_csv(request):
             leg.start_site.name if leg and leg.start_site else "",
             round(leg.start_lat, 5) if leg else "", round(leg.start_lon, 5) if leg else "",
             num((leg.end_ts - leg.start_ts).total_seconds() / 60, 1) if leg else "",
-            leg.gaps_bridged if leg else "", leg.callsign if leg else "", leg.confidence if leg else ""])
+            leg.gaps_bridged if leg else "", leg.callsign if leg else "", leg.confidence if leg else "",
+            *_next_columns(r, after.get(r.pk), next_sites, num)])
     return resp
+
+
+def _next_columns(r, nxt, sites, num):
+    """When and where the aircraft was next seen after an unresolved leg (blank if not within a week)."""
+    if not nxt:
+        return ["", "", "", ""]
+    start_ts, site_id, lat, lon = nxt
+    site = sites.get(site_id)
+    return [start_ts.strftime("%Y-%m-%d %H:%M:%S"), num((start_ts - r.end_ts).total_seconds() / 60, 1),
+            site.name if site else "", num(haversine_m(r.lat, r.lon, lat, lon) / 1000, 1)]
 
 
 @require_POST
@@ -745,9 +761,10 @@ def quality(request):
     resolved_sites = set(Leg.objects.filter(source=SOURCE, end_site__isnull=False).values_list("end_site", flat=True))
     zero = Site.objects.filter(is_active=True, site_type=Site.HOSPITAL).exclude(pk__in=resolved_sites)
     rate, resolved, total = resolved_rate(legs)
+    n_legs = sum(by_state.values())
     return render(request, "tracker/quality.html", {
         "rate": rate, "resolved": resolved, "total": total,
-        "by_state": [(label, by_state[s], by_state[s] / total if total else 0) for s, label in Leg.END_STATES],
+        "by_state": [(label, by_state[s], by_state[s] / n_legs if n_legs else 0) for s, label in Leg.END_STATES],
         "per_base": _state_shares(per_base.items()), "per_site": _state_shares(per_site.items())[:100],
         "end_states": Leg.END_STATES, "zero_sites": zero.order_by("state", "name"),
         "unreviewed_sites": Site.objects.filter(is_active=True, reviewed=False).count(),
@@ -1032,7 +1049,7 @@ def operations(request):
 
 
 MAP_KINDS = ("base", "hospital", "hangar")
-MAP_LAYERS = (*MAP_KINDS, "spot", "coverage")  # spots and coverage are off unless asked for
+MAP_LAYERS = (*MAP_KINDS, "spot", "coverage", "lost")  # spots, coverage and signal-lost are off unless asked for
 
 
 def site_map(request):
@@ -1233,6 +1250,22 @@ def site_place(request):
     except Exception as e:
         return JsonResponse({"city": "", "state": "", "error": f"City/state lookup failed: {str(e)[:300]}"})
     return JsonResponse({"city": city, "state": state, "error": ""})
+
+
+def lost_data(request):
+    """Where medical aircraft lost signal at altitude inside the study area (last 90 days), on a grid, for the map's
+    "Signal lost" layer (fetched when turned on): the coverage holes where a receiver would help most."""
+    size = settings.COVERAGE_CELL_DEG
+    cells = defaultdict(list)
+    for r in diagnose(medical_legs(request, days=90), SOURCE).rows:
+        if r.category == "lost_high":
+            cells[(math.floor(r.lat / size), math.floor(r.lon / size))].append(r)
+    out = []
+    for (i, j), rows in cells.items():
+        heights = [r.agl_ft for r in rows if r.agl_ft is not None]
+        out.append([i, j, len(rows), len({r.aircraft_id for r in rows}), round(median(heights)) if heights else None])
+    return JsonResponse({"size": size, "days": 90, "top": max((c[2] for c in out), default=0),
+                         "cells": sorted(out, key=lambda c: -c[2])})
 
 
 def coverage_data(request):
