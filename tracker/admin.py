@@ -5,6 +5,7 @@ from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
 from django.db.models import Count
 from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.html import format_html, format_html_join
@@ -13,7 +14,7 @@ from import_export.admin import ImportExportModelAdmin
 from import_export.widgets import ForeignKeyWidget
 
 from . import periods
-from .models import Aircraft, AutoConfirmRule, Operator, Program, ServicePeriod, Site
+from .models import Aircraft, AutoConfirmRule, Operator, Program, RegistryAircraft, ServicePeriod, Site
 from .ops import queue_refresh
 from .faa import merge_duplicate_faa_sites
 from .places import clear_covered_clusters
@@ -217,6 +218,12 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
 
+    def response_add(self, request, obj, post_url_continue=None):
+        # Added from the aircraft search: go to its page (where operator, program and base show) after Save.
+        if request.GET.get("then") == "page" and "_save" in request.POST:
+            return HttpResponseRedirect(reverse("aircraft_detail", args=[obj.pk]))
+        return super().response_add(request, obj, post_url_continue)
+
     @admin.display(description="Top hospitals")
     def top_hospitals(self, obj):
         """One hospital per line, e.g. "OSF Saint Francis (5)"."""
@@ -232,6 +239,11 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
             obj.origin, obj.icao_hex = "manual", obj.icao_hex.lower()
             if obj.status == Aircraft.DISCOVERED:
                 obj.status = Aircraft.CONFIRMED
+            reg = RegistryAircraft.objects.filter(mode_s_hex__iexact=obj.icao_hex).first()
+            if reg:  # identity details the registry has (read-only on the form)
+                obj.make_model = obj.make_model or f"{reg.make} {reg.model}".strip()[:100]
+                obj.registrant_hint = obj.registrant_hint or reg.registrant_name[:200]
+            flag_recount(f"aircraft {obj.tail_number} added")  # links its stored flights and missions
         had_operator = obj.operator_id
         was_retired = change and form.initial.get("retired", False)
         super().save_model(request, obj, form, change)
