@@ -92,6 +92,45 @@ class UnresolvedTests(UnresolvedData):
                                           {"radius_m": 500}).status_code, 403)
 
 
+class LegCreateSiteTests(UnresolvedData):
+    """"Create site" on each unresolved leg opens the new-site form there and returns to the list."""
+
+    def test_admin_button_per_leg_with_type_name_and_return(self):
+        from urllib.parse import parse_qs, urlparse
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("unresolved"), {"cat": "base_not_site", "sort": "date"})
+        [row] = list(r.context["page"])
+        q = parse_qs(urlparse(row.add_site_url).query)
+        self.assertEqual(urlparse(row.add_site_url).path, reverse("admin:tracker_site_add"))
+        self.assertEqual((q["site_type"], q["lat"], q["lon"], q["name"]),
+                         (["base"], ["41.000500"], ["-88.000000"], ["N1 base"]))
+        self.assertEqual(q["next"], [reverse("unresolved") + "?cat=base_not_site&sort=date#legs"])
+        self.assertContains(r, '>Create site</a>')
+        # Other categories open as a hospital helipad to name from the nearby-name buttons.
+        r = self.client.get(reverse("unresolved"), {"cat": "lost_low"})
+        [row] = list(r.context["page"])
+        q = parse_qs(urlparse(row.add_site_url).query, keep_blank_values=True)
+        self.assertEqual((q["site_type"], q["name"]), (["hospital_helipad"], [""]))
+        self.assertContains(r, "last seen here: check the pin")
+        # "Add as site" for a base comes back to its section too.
+        self.assertIn("next=" + reverse("unresolved").replace("/", "%2F"), r.context["bases"][0][2])
+        # Saving the form returns to the list.
+        add = r.context["page"][0].add_site_url
+        nxt = parse_qs(urlparse(add).query)["next"][0]
+        self.client.force_login(User.objects.create_superuser("root", password="x"))
+        resp = self.client.post(add, {"name": "Scene LZ", "site_type": "hospital_helipad", "lat": "39.3",
+                                      "lon": "-90.3", "elevation_ft": 0, "radius_m": 300, "origin": "manual",
+                                      "is_active": "on", "_save": "Save"})
+        self.assertEqual((resp.status_code, resp["Location"]), (302, nxt))
+        self.assertTrue(Site.objects.filter(name="Scene LZ").exists())
+
+    def test_viewers_get_no_button(self):
+        viewer = User.objects.create_user("v2", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        self.assertNotContains(self.client.get(reverse("unresolved")), ">Create site</a>")
+
+
 class UnresolvedCategoryTests(UnresolvedData):
     """Per-category metrics and the leg list (same legs as UnresolvedTests)."""
 

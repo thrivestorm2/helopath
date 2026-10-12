@@ -594,16 +594,22 @@ def _state_shares(groups):
 def unresolved(request):
     """Why legs are not resolved to a site (90 days), with the fixes that would raise the rate."""
     d = diagnose(medical_legs(request, days=90), SOURCE)
+    here = request.get_full_path()  # saving a new site comes back to this page as it is now
+
+    def add_site_url(lat, lon, aircraft=None, anchor="legs"):
+        """The admin's new-site form at a point: a base named after the aircraft when one is given, else a hospital
+        helipad to name from the form's nearby-name buttons."""
+        params = {"name": f"{aircraft.program or aircraft.operator or aircraft.display_name} base" if aircraft else "",
+                  "site_type": Site.BASE if aircraft else Site.HOSPITAL, "lat": f"{lat:.6f}", "lon": f"{lon:.6f}",
+                  "radius_m": 300, "origin": "manual", "next": f"{here}#{anchor}"}
+        return reverse("admin:tracker_site_add") + "?" + urlencode(params)
+
     bases = []
     if d.bases:
         found = Aircraft.objects.in_bulk(list(d.bases))
         for pk, n in sorted(d.bases.items(), key=lambda kv: -kv[1])[:25]:
             a = found[pk]
-            add = reverse("admin:tracker_site_add") + "?" + urlencode({
-                "name": f"{a.program or a.operator or a.display_name} base", "site_type": Site.BASE,
-                "lat": f"{a.inferred_base_lat:.6f}", "lon": f"{a.inferred_base_lon:.6f}",
-                "radius_m": 300, "origin": "manual"})
-            bases.append((a, n, add))
+            bases.append((a, n, add_site_url(a.inferred_base_lat, a.inferred_base_lon, a, anchor="base_not_site")))
     # Every unresolved leg, filterable and sortable by category (and date, aircraft, distance, height).
     category = request.GET.get("cat", "")
     rows = [r for r in d.rows if not category or r.category == category]
@@ -623,6 +629,8 @@ def unresolved(request):
     names = Aircraft.objects.in_bulk({r.aircraft_id for r in page if r.aircraft_id})
     for r in page:
         r.aircraft = names.get(r.aircraft_id)
+        base = r.aircraft if r.category == "base_not_site" else None
+        r.add_site_url = add_site_url(r.lat, r.lon, base)
     metrics = category_metrics(d)
     operators = Operator.objects.in_bulk({m["top_operator_id"] for m in metrics if m["top_operator_id"]})
     for m in metrics:

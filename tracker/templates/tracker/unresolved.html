@@ -92,7 +92,8 @@
   <td data-label="How it ended">{% if r.end_state == "signal_lost" %}signal lost{% elif r.end_state == "landing_inferred" %}landing inferred{% else %}landed{% endif %}</td>
   <td class="n" data-label="Nearest site">{% if r.nearest_site %}<a href="{% url 'site_detail' r.nearest_site.pk %}">{{ r.nearest_site.name }}</a> <span class="muted nowrap">· {{ r.nearest_label }}</span>{% else %}<span class="muted">{{ r.nearest_label }}</span>{% endif %}</td>
   <td class="n" data-label="Height">{% if r.agl_ft is not None %}{{ r.agl_ft|floatformat:0|intcomma }} ft{% else %}—{% endif %}</td>
-  <td data-label="Where"><a href="https://www.openstreetmap.org/?mlat={{ r.lat|stringformat:'.5f' }}&amp;mlon={{ r.lon|stringformat:'.5f' }}#map=16/{{ r.lat|stringformat:'.5f' }}/{{ r.lon|stringformat:'.5f' }}" target="_blank" rel="noopener">map ↗</a></td>
+  <td data-label="Where"><a href="https://www.openstreetmap.org/?mlat={{ r.lat|stringformat:'.5f' }}&amp;mlon={{ r.lon|stringformat:'.5f' }}#map=16/{{ r.lat|stringformat:'.5f' }}/{{ r.lon|stringformat:'.5f' }}" target="_blank" rel="noopener">map ↗</a>
+    {% if is_admin %}<a class="button leg-add" href="{{ r.add_site_url }}" title="New site where this leg ended{% if r.end_state == 'signal_lost' %} (last seen here: check the pin){% endif %}">Create site</a>{% endif %}</td>
 </tr>
 {% empty %}<tr><td colspan="7" class="muted empty-row">No unresolved legs{% if cat_title %} in this category{% endif %}.</td></tr>{% endfor %}
 </table></div>

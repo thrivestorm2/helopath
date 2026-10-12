@@ -199,3 +199,4 @@ tr.op-row:hover td { background:#eef2f8; }
 .op-toggle { width:1.2em; padding:0; text-decoration:none; }
 tr.op-aircraft td:first-child { padding-left:2em; }
 tr.op-aircraft td { font-size:.92em; background:#fafbfd; }
+.leg-add { margin-left:8px; padding:3px 8px; font-size:.9em; }
