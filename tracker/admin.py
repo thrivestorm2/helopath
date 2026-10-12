@@ -199,6 +199,7 @@ class AircraftForm(forms.ModelForm):
 class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     resource_classes = [AircraftResource]
     form = AircraftForm
+    change_form_template = "admin/tracker/aircraft/change_form.html"
     inlines = [ServicePeriodInline]
     list_display = ("tail_number", "call_sign", "icao_hex", "status", "origin", "operator", "base", "inferred_base",
                     "qualifying_visits", "last_seen")

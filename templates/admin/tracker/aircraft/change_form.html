@@ -1,0 +1,55 @@
+{% extends "admin/import_export/change_form.html" %}
+{% block after_field_sets %}{{ block.super }}
+{% if add %}
+<script>
+// New aircraft: typing a tail number fills the hex (worked out from US N-numbers), shows what the FAA registry
+// knows, warns if it is already tracked, and pre-selects the operator and program an auto-confirm rule gives the
+// owner. Typing a hex instead fills the tail number. Only blank fields, or ones filled here, are changed.
+(function () {
+  const tail = document.getElementById('id_tail_number'), hex = document.getElementById('id_icao_hex');
+  if (!tail || !hex) return;
+  const note = document.createElement('p');
+  note.className = 'help';
+  note.style.margin = '4px 10px';
+  note.setAttribute('aria-live', 'polite');
+  (tail.closest('.form-row') || tail.parentNode).appendChild(note);
+  const auto = {tail: null, hex: null};
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const choose = (id, item) => {
+    const sel = document.getElementById(id);
+    if (!sel || !item || sel.value) return;  // never replace a choice already made
+    const $ = window.django && django.jQuery;
+    if ($) { $(sel).append(new Option(item.name, item.id, true, true)).trigger('change'); }
+    else { sel.add(new Option(item.name, item.id, true, true)); }
+  };
+  let ticket = 0;
+  const lookup = params => {
+    const mine = ++ticket;
+    fetch('{% url "aircraft_lookup" %}?' + new URLSearchParams(params), {credentials: 'same-origin'})
+      .then(r => r.json()).then(d => {
+        if (mine !== ticket) return;  // typed again since
+        if (d.hex && (hex.value === '' || hex.value === auto.hex)) { hex.value = d.hex; auto.hex = d.hex; }
+        if (d.tail && (tail.value === '' || tail.value === auto.tail)) { tail.value = d.tail; auto.tail = d.tail; }
+        const parts = [];
+        if (d.existing) parts.push(`<strong>Already in the database:</strong> <a href="${esc(d.existing.url)}">${esc(d.existing.name)}</a>`);
+        if (d.registry) parts.push(`FAA registry: ${esc(d.registry.make_model)}` + (d.registry.owner ? ` · ${esc(d.registry.owner)}` : ''));
+        else if (d.hex) parts.push(`Hex ${esc(d.hex)} worked out from the tail number (not in the FAA helicopter list we load).`);
+        if (d.operator || d.program) parts.push('Operator and program set from your auto-confirm rule for this owner.');
+        if (d.note) parts.push(esc(d.note));
+        note.innerHTML = parts.join('<br>');
+        choose('id_operator', d.operator);
+        choose('id_program', d.program);
+      }).catch(() => {});
+  };
+  let timer;
+  const later = fn => { clearTimeout(timer); timer = setTimeout(fn, 400); };
+  tail.addEventListener('input', () => later(() => tail.value.trim() ? lookup({tail: tail.value}) : (note.innerHTML = '')));
+  hex.addEventListener('input', () => later(() => {
+    if (hex.value === auto.hex) return;
+    if (/^[0-9a-fA-F]{6}$/.test(hex.value.trim()) && (tail.value === '' || tail.value === auto.tail)) lookup({hex: hex.value});
+  }));
+  window.addEventListener('load', () => { if (tail.value.trim()) lookup({tail: tail.value}); });
+})();
+</script>
+{% endif %}
+{% endblock %}

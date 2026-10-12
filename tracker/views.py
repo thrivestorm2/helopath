@@ -51,6 +51,7 @@ from .resolution import (CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diag
                          radius_suggestions)
 from .rebuild_flag import (QUICK_NOTE, flag_recount, flag_site, progress_percent, rebuild_active, rebuild_progress,
                            rebuild_queued, running_kind)
+from .nnumber import hex_to_tail, tail_to_hex
 from .roles import admin_required, is_admin
 from .rules import apply_auto_confirm_rules
 
@@ -167,6 +168,41 @@ def aircraft_list(request):
     })
 
 
+@admin_required
+def aircraft_lookup(request):
+    """For the admin's new-aircraft form: what is known about a tail number or hex as it is typed. The hex of a
+    US N-number is computed (nnumber), so it fills in for any US aircraft; the FAA registry (helicopters) adds
+    make, model and owner; an auto-confirm rule matching the owner suggests the operator and program."""
+    tail = request.GET.get("tail", "").strip().upper().replace("-", "")
+    hexid = request.GET.get("hex", "").strip().lower()
+    if tail:
+        tail = tail if tail.startswith("N") else f"N{tail}"
+        hexid = tail_to_hex(tail) or ""
+        if not hexid:
+            return JsonResponse({"note": "Not a US N-number, so the hex code can't be worked out: enter it."})
+    elif HEX_TYPED.match(hexid):
+        tail = hex_to_tail(hexid) or ""
+    else:
+        return JsonResponse({})
+    out = {"tail": tail, "hex": hexid}
+    existing = Aircraft.objects.filter(Q(icao_hex=hexid) | Q(tail_number__iexact=tail) if tail else Q(icao_hex=hexid)).first()
+    if existing:
+        out["existing"] = {"name": f"{existing.display_name} ({existing.get_status_display().lower()})",
+                           "url": reverse("aircraft_detail", args=[existing.pk])}
+    reg = RegistryAircraft.objects.filter(mode_s_hex__iexact=hexid).first()
+    if reg:
+        out["registry"] = {"make_model": f"{reg.make} {reg.model}".strip(), "owner": reg.registrant_name}
+        for rule in AutoConfirmRule.objects.filter(is_active=True).select_related("operator", "program"):
+            needle = rule.registrant_contains.strip().lower()
+            if needle and needle in reg.registrant_name.lower():
+                if rule.operator:
+                    out["operator"] = {"id": rule.operator.pk, "name": str(rule.operator)}
+                if rule.program:
+                    out["program"] = {"id": rule.program.pk, "name": str(rule.program)}
+                break
+    return JsonResponse(out)
+
+
 HEX_TYPED = re.compile(r"^[0-9a-fA-F]{6}$")
 TAIL_TYPED = re.compile(r"^N?([0-9][0-9A-Z]{0,4})$")
 
@@ -189,9 +225,11 @@ def _add_aircraft_offer(q):
         params.update(tail_number=reg.tail_number, icao_hex=reg.mode_s_hex.lower())
     elif hexid:
         params["icao_hex"] = hexid
+        params["tail_number"] = hex_to_tail(hexid) or ""
     else:
         params["tail_number"] = f"N{n_number}"
-    return {"registry": reg, "typed": q.strip(),
+        params["icao_hex"] = tail_to_hex(n_number) or ""
+    return {"registry": reg, "typed": q.strip(), "hex": params.get("icao_hex", ""),
             "url": reverse("admin:tracker_aircraft_add") + "?" + urlencode(params)}
 
 
