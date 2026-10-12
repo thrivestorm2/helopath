@@ -70,7 +70,8 @@ class Site(SocialPagesMixin, models.Model):
     AIRPORT = "airport"
     OTHER = "other"
     TYPE_CHOICES = [(HOSPITAL, "Hospital helipad"), (BASE, "Base"), (AIRPORT, "Airport"), (OTHER, "Other")]
-    ORIGIN_CHOICES = [("faa_seed", "FAA seed"), ("manual", "Manual"), ("from_cluster", "From landing cluster")]
+    ORIGIN_CHOICES = [("faa_seed", "FAA seed"), ("manual", "Manual"), ("from_cluster", "From landing cluster"),
+                      ("csv_import", "CSV import")]
 
     name = models.CharField(max_length=200)
     site_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=HOSPITAL)

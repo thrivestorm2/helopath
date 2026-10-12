@@ -30,6 +30,9 @@
       one is due, and every {{ full_rebuild_weekday }} as a safety net.</span></form>
 </div>
 
+{% if user.is_superuser %}<p><a class="button" href="{% url 'site_import' %}">Import sites from CSV</a>
+  <span class="muted">e.g. an operator's list of bases; adds and updates, never removes.</span></p>{% endif %}
+
 <h2>Recent rebuilds</h2>
 <div class="scroll"><table class="stack">
 <tr class="head"><th>Started</th><th>Kind</th><th>Why</th><th class="n">Aircraft re-derived</th><th class="n">Took</th><th>Steps</th></tr>

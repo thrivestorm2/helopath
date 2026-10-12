@@ -1,0 +1,42 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h1>Import sites from CSV</h1>
+{% if not rows %}
+<div class="card">
+  <p>Adds and updates sites from a spreadsheet, such as an operator's list of bases. Nothing is removed, and
+    nothing is saved until you approve the preview.</p>
+  <p class="muted">Columns (first row): <code style="word-break:break-all">{{ columns|join:"," }}</code>. Only <code>name</code> and either
+    <code>latitude</code>/<code>longitude</code> or an address are needed; blank cells never erase anything.</p>
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    <input type="file" name="file" accept=".csv,text/csv" required> <button class="primary">Preview</button></form>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</div>
+{% else %}
+<p class="muted">{{ rows|length }} rows: {% for status, n in counts %}{{ n }} {% if status == "new" %}new{% elif status == "update" %}to update{% elif status == "covered" %}at an existing hospital/airport{% elif status == "same" %}already up to date{% elif status == "outside" %}outside the study area{% elif status == "unlocated" %}couldn't locate{% else %}invalid{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
+  Ticked rows are applied; check pins with the map links.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="import">
+<div class="scroll"><table class="stack import-preview">
+<tr class="head"><th></th><th>Site</th><th>Result</th><th>Details</th><th>Map</th></tr>
+{% for r in rows %}
+<tr class="import-{{ r.status }}{% if r.outside %} import-outside{% endif %}">
+  <td>{% if r.selectable %}<input type="checkbox" name="row" value="{{ r.n }}" aria-label="Apply row {{ r.n }}"{% if r.ticked %} checked{% endif %}>{% endif %}</td>
+  <td class="lead wrap">{{ r.name|default:"(no name)" }} <span class="muted">· row {{ r.n }}</span></td>
+  <td data-label="Result">{% if r.status == "new" %}<span class="badge confirmed">New</span>
+    {% elif r.status == "update" %}<span class="badge discovered">Update</span> <a href="{% url 'site_detail' r.existing.pk %}">{{ r.existing.name }}</a>
+    {% elif r.status == "covered" %}At existing {{ r.existing.get_site_type_display|lower }}: <a href="{% url 'site_detail' r.existing.pk %}">{{ r.existing.name }}</a>
+    {% elif r.status == "same" %}<span class="muted">Already up to date:</span> <a href="{% url 'site_detail' r.existing.pk %}">{{ r.existing.name }}</a>
+    {% elif r.status == "unlocated" %}<span class="badge rejected">Couldn't locate</span>
+    {% else %}<span class="badge rejected">Invalid</span>{% endif %}
+    {% if r.outside and r.status != "unlocated" %}<div class="muted">Outside the study area</div>{% endif %}</td>
+  <td class="wrap" data-label="Details"><div>
+    {% if r.status == "new" %}{% if r.site_type == "base" %}Base{% else %}{{ r.site_type }}{% endif %}{% if r.faa %} · FAA {{ r.faa.faa_id }} (pad position){% endif %}
+    {% if r.note %}<div class="muted">{{ r.note|truncatechars:160 }}</div>{% endif %}
+    {% elif r.changes %}{% for label, before, after in r.changes %}<div><strong>{{ label }}:</strong> {% if before %}{{ before }} → {% endif %}{{ after|truncatechars:160 }}</div>{% endfor %}
+    {% elif r.problem %}{{ r.problem }}{% if r.status == "unlocated" %} <a href="{% url 'admin:tracker_site_add' %}?name={{ r.name|urlencode }}&amp;site_type={{ r.site_type }}&amp;origin=csv_import">Create it by hand</a>{% endif %}{% endif %}</div></td>
+  <td data-label="Map">{% if r.lat is not None %}<a href="https://www.openstreetmap.org/?mlat={{ r.lat|stringformat:'.5f' }}&amp;mlon={{ r.lon|stringformat:'.5f' }}#map=17/{{ r.lat|stringformat:'.5f' }}/{{ r.lon|stringformat:'.5f' }}" target="_blank" rel="noopener">map ↗</a>{% endif %}</td>
+</tr>{% endfor %}
+</table></div>
+<p><button class="primary">Import ticked rows</button> <a href="{% url 'site_import' %}">Start over</a></p>
+</form>
+{% endif %}
+{% endblock %}
