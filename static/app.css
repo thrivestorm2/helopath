@@ -99,8 +99,11 @@ tr[data-href]:hover td, tr[data-href]:active td { background: #eef2f8; }
 @media (max-width: 640px) { table.stack td .suggestion { text-align: right; max-width: 70%; } }
 
 /* Operator page: aircraft grouped by program */
-h3.program-group { font-size: 15px; margin: 16px 0 6px; }
-h3.program-group:first-of-type { margin-top: 4px; }
+.program-group { border-top: 1px solid #e5e7eb; padding: 8px 0; }
+.program-group > summary, .program-group.empty { font-weight: 600; font-size: 15px; cursor: pointer; }
+.program-group.empty { cursor: default; padding-left: 16px; }  /* lines up with the expandable ones */
+.program-group[open] > summary { margin-bottom: 6px; }
+.program-toggle-all { margin: 0 0 6px; font-size: 13px; }
 
 /* Route map */
 a.map-link { white-space: nowrap; }

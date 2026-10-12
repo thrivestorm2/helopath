@@ -18,10 +18,20 @@
 
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
 <div class="card"><h2 style="margin-top:0">Aircraft{% if program_groups %} by program{% endif %}</h2>
-  {% if program_groups %}{% for program, members in program_groups %}
-  <h3 class="program-group">{% if program %}<a href="{% url 'program_detail' program.pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.name }}</a>{% else %}<span class="muted">No program</span>{% endif %}
-    <span class="muted">· {{ members|length }} aircraft</span></h3>
-  {% include "tracker/_operator_aircraft.html" with aircraft=members %}
+  {% if program_groups %}
+  <p class="program-toggle-all"><button type="button" class="link" data-open="1">Expand all</button> ·
+    <button type="button" class="link" data-open="">Collapse all</button></p>
+  {% if no_program %}<details class="program-group"{% if no_program_open %} open{% endif %}>
+    <summary><span class="muted">No program</span> <span class="muted">· {{ no_program|length }} aircraft</span></summary>
+    {% include "tracker/_operator_aircraft.html" with aircraft=no_program %}
+  </details>{% endif %}
+  {% for program, members in program_groups %}
+  {% if members %}<details class="program-group">
+    <summary><a href="{% url 'program_detail' program.pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.name }}</a>
+      <span class="muted">· {{ members|length }} aircraft</span></summary>
+    {% include "tracker/_operator_aircraft.html" with aircraft=members %}
+  </details>{% else %}<div class="program-group empty"><a href="{% url 'program_detail' program.pk %}{% if confirmed_only %}?confirmed=1{% endif %}">{{ program.name }}</a>
+    <span class="muted">· 0 aircraft</span></div>{% endif %}
   {% endfor %}{% else %}{% include "tracker/_operator_aircraft.html" %}{% endif %}
 </div>
 <div class="card"><h2 style="margin-top:0">Bases</h2>
@@ -49,4 +59,11 @@
 {% empty %}<tr><td colspan="5" class="muted empty-row">No routes yet.</td></tr>{% endfor %}
 </table></div>
 <p class="muted">Missions are inferred from public ADS-B positions. See <a href="{% url 'flows' %}?operator={{ operator.pk }}">Flows</a> for the full table and CSV export.</p>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.program-toggle-all button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('details.program-group').forEach(d => { d.open = !!b.dataset.open; });
+}));
+</script>
 {% endblock %}

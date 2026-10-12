@@ -501,13 +501,14 @@ def operator_detail(request, pk):
     operator = get_object_or_404(Operator, pk=pk)
     aircraft = list(Aircraft.objects.filter(operator=operator, status__in=_statuses(request))
                     .select_related("program", "base", "inferred_base").order_by(Aircraft.sort_name()))
-    # Aircraft grouped by program: the operator's programs (even with no aircraft shown) by name, then any other
-    # program its aircraft carry, then those with none. Only grouped when there is a program to group by.
+    # Aircraft grouped by program: those with no program first (they need one), then the operator's programs (even
+    # with no aircraft shown) and any other program its aircraft carry, by name. Only grouped when there is a
+    # program to group by.
     groups = {p: [] for p in operator.programs.all()}
     for a in aircraft:
         groups.setdefault(a.program, []).append(a)
     named = sorted((p for p in groups if p), key=lambda p: p.name.lower())
-    program_groups = [(p, groups[p]) for p in named] + ([(None, groups[None])] if groups.get(None) else [])
+    program_groups = [(p, groups[p]) for p in named]
     aggs = MonthlyAggregate.objects.filter(source=SOURCE, operator=operator,
                                            includes_unreviewed=not _confirmed_only(request))
     labels = [code for code, _ in Mission.LABELS]
@@ -532,6 +533,8 @@ def operator_detail(request, pk):
         "flows": _route_rows(request, flows, operator=operator.pk),
         "bases": [(pk, base_names[pk], n) for pk, n in bases.most_common()],
         "program_groups": program_groups if named else [],
+        "no_program": groups.get(None, []) if named else [],
+        "no_program_open": len(groups.get(None, [])) <= 10,  # a long list starts collapsed too
         "confirmed_only": _confirmed_only(request),
     })
 

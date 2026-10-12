@@ -62,9 +62,21 @@ class ProgramTests(TestCase):
         r = self.client.get(reverse("operator_detail", args=[self.op.pk]))
         self.assertContains(r, "Aircraft by program")
         body = r.content.decode()
-        order = [body.index(s) for s in (">Air Angels</a>", ">OSF Life Flight</a>", "N1LF", "No program", "N4NP")]
-        self.assertEqual(order, sorted(order))  # programs by name, each followed by its aircraft; no program last
-        self.assertContains(r, "No aircraft in this program.")
+        order = [body.index(s) for s in ("No program", "N4NP", ">Air Angels</a>", ">OSF Life Flight</a>", "N1LF")]
+        self.assertEqual(order, sorted(order))  # no program first, then programs by name, each with its aircraft
+        # No program starts open; programs start collapsed; an empty program cannot be expanded.
+        self.assertContains(r, '<details class="program-group" open>\n    <summary><span class="muted">No program</span>'
+                               ' <span class="muted">· 1 aircraft</span>', html=False)
+        self.assertEqual(body.count('<details class="program-group">'), 1)  # OSF Life Flight, collapsed
+        self.assertContains(r, '<span class="muted">· 0 aircraft</span></div>')  # Air Angels
+        self.assertContains(r, ">Expand all</button>")
+        # A long no-program list starts collapsed too.
+        for i in range(10):
+            Aircraft.objects.create(tail_number=f"N9{i}NP", icao_hex=f"a0009{i}", status=Aircraft.CONFIRMED,
+                                    operator=self.op)
+        r = self.client.get(reverse("operator_detail", args=[self.op.pk]))
+        self.assertContains(r, "· 11 aircraft")
+        self.assertNotContains(r, '<details class="program-group" open>')
         # An operator without programs keeps the plain list.
         plain = Operator.objects.create(name="Air Evac Lifeteam")
         self.other.operator = plain
