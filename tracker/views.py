@@ -27,6 +27,7 @@ from .geo import SiteIndex, haversine_m
 from .hangars import based_aircraft, suggest_hangars
 from .lookup import call_sign_suggestions, lookup_links, program_suggestions
 from .models import (
+    RegistryAircraft,
     AutoConfirmRule,
     PlaceSuggestion,
     Aircraft,
@@ -155,12 +156,43 @@ def aircraft_list(request):
                        {"name", "icao_hex", "make_model", "status", "qualifying_visits", "first_seen", "last_seen",
                         "operator__name", "program__name"}, "name")
     bases = Site.objects.filter(Q(based_aircraft__isnull=False) | Q(inferred_based_aircraft__isnull=False)).distinct()
+    page = _page(request, qs)
+    offer = _add_aircraft_offer(q) if q and not page.paginator.count and is_admin(request.user) else None
     return render(request, "tracker/aircraft_list.html", {
-        "page": _page(request, qs), "sort": sort, "filter_qs": _filter_qs(request), "operators": Operator.objects.all(), "bases": bases,
+        "page": page, "sort": sort, "filter_qs": _filter_qs(request), "operators": Operator.objects.all(), "bases": bases,
+        "add_offer": offer,
         "programs": Program.objects.all(),
         "statuses": [s for s in Aircraft.STATUS_CHOICES if s[0] in Aircraft.VISIBLE],
         "landed_at": landed_at, "clear_site_qs": _filter_qs(request, drop="site"),
     })
+
+
+HEX_TYPED = re.compile(r"^[0-9a-fA-F]{6}$")
+TAIL_TYPED = re.compile(r"^N?([0-9][0-9A-Z]{0,4})$")
+
+
+def _add_aircraft_offer(q):
+    """For an admin's search that found nothing: the aircraft if it is rejected (hidden from the list), else the
+    FAA registry match and a new-aircraft form pre-filled from it (or from what was typed)."""
+    typed = q.strip().upper().replace("-", "").replace(" ", "")
+    hexid = typed.lower() if HEX_TYPED.match(typed) else ""
+    tail = TAIL_TYPED.match(typed)
+    n_number = tail.group(1) if tail and not (hexid and not typed.startswith("N")) else ""
+    if not (hexid or n_number):
+        return None
+    existing = Aircraft.objects.filter(Q(icao_hex=hexid) if hexid else Q(tail_number__iexact=f"N{n_number}")).first()
+    if existing:  # rejected (hidden from the list), or left out by the other filters
+        return {"existing": existing}
+    reg = RegistryAircraft.objects.filter(Q(mode_s_hex__iexact=hexid) if hexid else Q(n_number=n_number)).first()
+    params = {"status": Aircraft.CONFIRMED, "origin": "manual", "then": "page"}
+    if reg:
+        params.update(tail_number=reg.tail_number, icao_hex=reg.mode_s_hex.lower())
+    elif hexid:
+        params["icao_hex"] = hexid
+    else:
+        params["tail_number"] = f"N{n_number}"
+    return {"registry": reg, "typed": q.strip(),
+            "url": reverse("admin:tracker_aircraft_add") + "?" + urlencode(params)}
 
 
 def aircraft_detail(request, pk):

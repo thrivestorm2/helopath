@@ -1,7 +1,7 @@
 {% extends "tracker/base.html" %}
 {% block content %}
 <h1>Aircraft</h1>
-<form class="filters" method="get" hx-get="{% url 'aircraft_list' %}" hx-target="#results" hx-select="#results"
+<form class="filters" method="get" hx-get="{% url 'aircraft_list' %}" hx-target="#results" hx-select="#results" hx-swap="outerHTML"
       hx-trigger="input changed delay:300ms from:input[name=q], change" hx-push-url="true">
   <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Call sign, tail, hex, make/model">
   <select name="status"><option value="">Any status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
@@ -39,8 +39,23 @@
   <td class="nowrap" data-label="First seen">{{ a.first_seen|date:"Y-m-d" }}</td>
   <td class="nowrap" data-label="Last seen">{{ a.last_seen|date:"Y-m-d" }}</td>
 </tr>
-{% empty %}<tr><td colspan="10" class="muted empty-row">No discovered or confirmed aircraft yet.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="10" class="muted empty-row">{% if request.GET.q %}No aircraft found.{% else %}No discovered or confirmed aircraft yet.{% endif %}</td></tr>{% endfor %}
 </table></div>
+{% if add_offer %}<div class="card add-aircraft">
+  {% if add_offer.existing %}{% with a=add_offer.existing %}
+  <p><strong>{{ a.display_name }}</strong> is already in the database{% if a.status == "rejected" %} but was <strong>rejected</strong>, so it is hidden here{% else %} ({{ a.get_status_display|lower }}); the filters above leave it out{% endif %}.</p>
+  <a class="button" href="{% if a.status == 'rejected' %}{% url 'admin:tracker_aircraft_change' a.pk %}?next={% url 'aircraft_detail' a.pk %}{% else %}{% url 'aircraft_detail' a.pk %}{% endif %}">{% if a.status == "rejected" %}Open it to change its status{% else %}Open it{% endif %}</a>
+  {% endwith %}{% elif add_offer.registry %}{% with r=add_offer.registry %}
+  <p>Not tracked yet. In the FAA registry: <strong>{{ r.tail_number }}</strong> · {{ r.make }} {{ r.model }}
+    {% if r.registrant_name %}· {{ r.registrant_name }}{% endif %} · hex <code>{{ r.mode_s_hex|lower }}</code></p>
+  <a class="button primary" href="{{ add_offer.url }}">Add aircraft</a>
+  <span class="muted">Set its operator, program and base on the next page.</span>
+  {% endwith %}{% else %}
+  <p>Not tracked yet, and not in the FAA registry's helicopter list (planes are not in it).</p>
+  <a class="button primary" href="{{ add_offer.url }}">Add aircraft</a>
+  <span class="muted">You'll need its hex (Mode S) code: <a href="https://registry.faa.gov/aircraftinquiry/Search/NNumberInquiry" target="_blank" rel="noopener">look it up on the FAA registry ↗</a>.</span>
+  {% endif %}
+</div>{% endif %}
 {% include "tracker/_pager.html" %}
 </div>
 {% endblock %}
