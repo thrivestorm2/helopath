@@ -1,11 +1,14 @@
 """Why legs are not resolved to a site, and what would fix it (the Data quality "unresolved legs" page)."""
 
 import math
+from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import timedelta
 from statistics import median
 
 from django.conf import settings
+from django.db.models import Q
 
 from .geo import SiteIndex, haversine_m
 from .models import Aircraft, LandingCluster, Leg, Site
@@ -37,8 +40,12 @@ BUCKETS = [
      "Not fixable here; more receivers in the area would help.", False),
     ("lost_high", "Signal lost at altitude",
      f"Coverage ended more than {HIGH_AGL_FT:,} ft above the ground: a gap en route, not a landing. Not fixable "
-     "here.", False),
+     "here; more receivers where it happens would help (the map's \"Signal lost\" layer shows where).", False),
+    ("outside_area", "Ended outside the study area",
+     "Ended outside Illinois and the border receiving areas, where there are no sites to match. Not counted in the "
+     "resolved-landing rate.", False),
 ]
+OUTSIDE = "outside_area"
 
 
 NEAREST_SEARCH_M = 25_000   # how far to look for "nearest site" in the per-leg details
@@ -65,6 +72,7 @@ class UnresolvedLeg:
     lon: float
     aircraft_id: int
     operator_id: int
+    hex: str = ""
     agl_ft: float = None
     nearest_site: object = None
     nearest_m: float = None
@@ -80,8 +88,10 @@ class UnresolvedLeg:
 
 @dataclass
 class Diagnosis:
-    total: int = 0
-    resolved: int = 0
+    total: int = 0       # legs ending inside the study area
+    resolved: int = 0    # of those, ending at a site or (signal lost) seen departing one afterwards
+    seen_departing: int = 0  # resolved because the aircraft was next seen departing a site
+    outside: int = 0     # legs ending outside the study area (not in total)
     counts: Counter = field(default_factory=Counter)
     near_sites: dict = field(default_factory=lambda: defaultdict(list))   # site -> [distance_m]
     bases: dict = field(default_factory=lambda: defaultdict(int))         # aircraft -> legs ending at its base
@@ -98,7 +108,7 @@ class Diagnosis:
 
     @property
     def best_rate(self):
-        """The rate if every fixable leg were resolved."""
+        """The rate if every fixable leg were resolved (legs outside the study area are not counted)."""
         return (self.resolved + self.fixable) / self.total if self.total else None
 
     def buckets(self):
@@ -113,23 +123,85 @@ def _point_bases():
         inferred_base_lat__isnull=False).values_list("pk", "inferred_base_lat", "inferred_base_lon")}
 
 
+def in_study_area():
+    """Legs ending inside the study area (BBOX_*): the resolved-landing rate counts only these."""
+    return Q(end_lat__gte=settings.BBOX_LAT_MIN, end_lat__lte=settings.BBOX_LAT_MAX,
+             end_lon__gte=settings.BBOX_LON_MIN, end_lon__lte=settings.BBOX_LON_MAX)
+
+
+def _inside(lat, lon):
+    return (settings.BBOX_LAT_MIN <= lat <= settings.BBOX_LAT_MAX
+            and settings.BBOX_LON_MIN <= lon <= settings.BBOX_LON_MAX)
+
+
+def next_legs(ended, source, within_hours=None):
+    """{leg pk: (start_ts, start_site_id, start_lat, start_lon)} with the aircraft's next leg after each of
+    `ended` [(pk, hex, end_ts)], optionally only when it starts within `within_hours`."""
+    if not ended:
+        return {}
+    last = max(ts for _, _, ts in ended) + timedelta(hours=within_hours or 24 * 7)
+    starts = defaultdict(list)
+    for hexid, *rest in (Leg.objects.filter(source=source, hex__in={h for _, h, _ in ended},
+                                            start_ts__gt=min(ts for _, _, ts in ended), start_ts__lte=last)
+                         .order_by("hex", "start_ts")
+                         .values_list("hex", "start_ts", "start_site_id", "start_lat", "start_lon")):
+        starts[hexid].append(tuple(rest))
+    out = {}
+    for pk, hexid, end_ts in ended:
+        later = starts.get(hexid, [])
+        i = bisect_right([s[0] for s in later], end_ts)
+        if i < len(later) and (within_hours is None or later[i][0] - end_ts <= timedelta(hours=within_hours)):
+            out[pk] = later[i]
+    return out
+
+
+def _seen_departing(legs, source):
+    """{leg pk: next start} for legs whose signal was lost and whose aircraft was next seen starting a leg within
+    MISSION_LOST_SIGNAL_BRIDGE_HOURS: missions count such a leg as arriving where that next leg starts."""
+    lost = list(legs.filter(end_site__isnull=True, end_state=Leg.LOST).values_list("pk", "hex", "end_ts"))
+    return next_legs(lost, source, settings.MISSION_LOST_SIGNAL_BRIDGE_HOURS)
+
+
+def landing_rate(legs, source):
+    """(rate, resolved, total) for the resolved-landing rate: legs ending inside the study area that end at a
+    site, or whose signal was lost and the aircraft was next seen departing a site soon after (as missions count
+    it)."""
+    inside = legs.filter(in_study_area())
+    total = inside.count()
+    seen = sum(1 for nxt in _seen_departing(inside, source).values() if nxt[1])
+    resolved = inside.filter(end_site__isnull=False).count() + seen
+    return (resolved / total if total else None), resolved, total
+
+
 def diagnose(legs, source):
     """Sort a queryset of legs into Diagnosis buckets (only the unresolved ones are examined). Each unresolved
     leg is also kept as a row (UnresolvedLeg) for the per-category metrics and the leg list."""
-    d = Diagnosis(total=legs.count())
-    d.resolved = legs.filter(end_site__isnull=False).count()
+    inside = legs.filter(in_study_area())
+    d = Diagnosis(total=inside.count(), outside=legs.exclude(in_study_area()).count())
+    d.resolved = inside.filter(end_site__isnull=False).count()
+    departing = _seen_departing(inside, source)
     sites = SiteIndex(Site.objects.filter(is_active=True))
     clusters = SiteIndex(LandingCluster.objects.filter(source=source, dismissed=False,
                                                        landing_count__gte=MIN_CLUSTER_LANDINGS))
     bases = _point_bases()
-    for pk, state, end_ts, lat, lon, alt, aircraft_id, operator_id in legs.filter(end_site__isnull=True).values_list(
-            "pk", "end_state", "end_ts", "end_lat", "end_lon", "end_alt_ft", "aircraft_id", "aircraft__operator_id"):
+    for pk, hexid, state, end_ts, lat, lon, alt, aircraft_id, operator_id in legs.filter(
+            end_site__isnull=True).values_list("pk", "hex", "end_state", "end_ts", "end_lat", "end_lon",
+                                               "end_alt_ft", "aircraft_id", "aircraft__operator_id"):
+        nxt = departing.get(pk)
+        if nxt and nxt[1]:
+            d.resolved += 1  # landed below coverage: seen departing a site afterwards
+            d.seen_departing += 1
+            continue
         near = [(dist, s) for dist, s in sites.within(lat, lon, MAX_SUGGESTED_RADIUS_AIRPORT_M)
                 if dist <= (MAX_SUGGESTED_RADIUS_AIRPORT_M if s.site_type == Site.AIRPORT else NEAR_MISS_M)]
         nearest = near[0] if near else next(iter(sites.within(lat, lon, NEAREST_SEARCH_M)), None)
         ground = near[0][1].elevation_ft if near and near[0][1].elevation_ft else DEFAULT_GROUND_FT
         base = bases.get(aircraft_id)
-        if base and haversine_m(lat, lon, *base) <= settings.BASE_POINT_RADIUS_M:
+        if not _inside(lat, lon):
+            category = OUTSIDE
+        elif base and (haversine_m(lat, lon, *base) <= settings.BASE_POINT_RADIUS_M
+                       or (nxt and haversine_m(nxt[2], nxt[3], *base) <= settings.BASE_POINT_RADIUS_M)):
+            # Ended at its base, or lost and next seen leaving it: either way the base needs to be a site.
             category = "base_not_site"
             d.bases[aircraft_id] += 1
         elif state == Leg.LOST and alt is not None and alt - ground > HIGH_AGL_FT:
@@ -144,7 +216,7 @@ def diagnose(legs, source):
             category = "lost_low" if state == Leg.LOST else "one_off_landing"
         d.counts[category] += 1
         d.rows.append(UnresolvedLeg(
-            pk, category, state, end_ts, lat, lon, aircraft_id, operator_id,
+            pk, category, state, end_ts, lat, lon, aircraft_id, operator_id, hex=hexid,
             agl_ft=None if alt is None else max(0, alt - ground),
             nearest_site=nearest[1] if nearest else None, nearest_m=nearest[0] if nearest else None))
     return d

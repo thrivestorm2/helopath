@@ -15,6 +15,9 @@
   <label class="map-toggle" title="Where ADS-B positions were received in the last {{ coverage_days }} days">
     <input type="checkbox" name="show" value="coverage" {% if "coverage" in shown %}checked{% endif %}>
     <span class="coverage-key" aria-hidden="true"></span> Coverage</label>
+  <label class="map-toggle" title="Where medical aircraft lost signal above 1,500 ft inside the study area (last 90 days): coverage holes where a receiver would help">
+    <input type="checkbox" name="show" value="lost" {% if "lost" in shown %}checked{% endif %}>
+    <span class="lost-key" aria-hidden="true"></span> Signal lost</label>
   <select name="operator" onchange="this.form.submit()" aria-label="Operator">
     <option value="">All operators</option>
     {% for o in operators %}<option value="{{ o.pk }}" {% if operator.pk == o.pk %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
@@ -33,6 +36,11 @@
   <div class="coverage-scale"><span>light</span><span class="coverage-key wide"></span><span>heavy</span></div>
   <div class="muted">Legs received per ~5 km square. No colour: no positions received there (often just no flights).</div>
 </div>
+<div id="lost-legend" class="coverage-legend" hidden>
+  <strong>Signal lost at altitude</strong> <span class="muted">(last 90 days)</span>
+  <div class="muted">Each circle is a ~5 km square where medical aircraft lost signal above 1,500 ft; bigger means
+    more often. A receiver near the biggest ones would catch these approaches.</div>
+</div>
 {{ markers|json_script:"map-markers" }}
 {% endblock %}
 {% block scripts %}
@@ -46,6 +54,7 @@
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   const touch = window.matchMedia('(hover: none)').matches;
+  const OVERLAYS = ['coverage', 'lost'];  // shading, not pins: never part of fitting the view
   // A hospital that is also a base: hospital pin while Hospitals is on; base pin when only Bases is on;
   // hidden when both are off (see apply()).
   const layers = {base: L.featureGroup(), hospital: L.featureGroup(), hangar: L.featureGroup(),
@@ -104,10 +113,32 @@
       });
     });
   };
+  // Signal lost: circles on the same grid, fetched the first time it is turned on.
+  layers.lost = L.featureGroup();
+  const lostLegend = document.getElementById('lost-legend');
+  let lostLoaded = false;
+  const loadLost = () => {
+    if (lostLoaded) return;
+    lostLoaded = true;
+    fetch('{% url "lost_data" %}' + window.location.search, {credentials: 'same-origin'}).then(r => r.json()).then(d => {
+      const top = Math.max(d.top, 1);
+      d.cells.forEach(([i, j, n, aircraft, agl]) => {
+        L.circleMarker([(i + 0.5) * d.size, (j + 0.5) * d.size], {
+          radius: 4 + 14 * Math.sqrt(n / top), color: '#6a1b9a', weight: 1, fillColor: '#8e24aa', fillOpacity: 0.45,
+        }).bindTooltip(`${n} signal loss${n === 1 ? '' : 'es'} at altitude here` +
+                       `<br>${aircraft} aircraft` + (agl !== null ? ` · median ${agl.toLocaleString()} ft above ground` : ''),
+                       {sticky: true}).addTo(layers.lost);
+      });
+      // Shown on its own (no pins): frame the circles instead.
+      if (!userMoved && !visiblePoints().length && layers.lost.getLayers().length) {
+        map.fitBounds(layers.lost.getBounds(), {padding: [30, 30], maxZoom: 10});
+      }
+    });
+  };
   const boxes = document.querySelectorAll('.map-toggle input');
   const fit = (animate = true) => {
     const b = L.latLngBounds([]);
-    Object.entries(layers).forEach(([k, g]) => { if (k !== 'coverage' && map.hasLayer(g) && g.getLayers().length) b.extend(g.getBounds()); });
+    Object.entries(layers).forEach(([k, g]) => { if (!OVERLAYS.includes(k) && map.hasLayer(g) && g.getLayers().length) b.extend(g.getBounds()); });
     if (b.isValid()) map.fitBounds(b, {padding: [30, 30], maxZoom: 13, animate});
   };
   const apply = refit => {
@@ -117,6 +148,9 @@
     const cov = document.querySelector('.map-toggle input[value=coverage]').checked;
     legend.hidden = !cov;
     if (cov) loadCoverage();
+    const lost = document.querySelector('.map-toggle input[value=lost]').checked;
+    lostLegend.hidden = !lost;
+    if (lost) loadLost();
     if (refit) fit();
     const url = new URL(window.location);
     url.searchParams.set('f', '1');
@@ -124,7 +158,7 @@
     boxes.forEach(cb => { if (cb.checked) url.searchParams.append('show', cb.value); });
     history.replaceState(null, '', url);
   };
-  boxes.forEach(cb => cb.addEventListener('change', () => { userMoved = true; apply(cb.value !== 'coverage'); }));
+  boxes.forEach(cb => cb.addEventListener('change', () => { userMoved = true; apply(!OVERLAYS.includes(cb.value)); }));
   apply(false);
   fit(false);
 
@@ -140,7 +174,7 @@
   const visiblePoints = () => {
     const pts = [];
     Object.entries(layers).forEach(([k, g]) => {
-      if (k !== 'coverage' && map.hasLayer(g)) g.eachLayer(l => { if (l.getLatLng) pts.push(l.getLatLng()); });
+      if (!OVERLAYS.includes(k) && map.hasLayer(g)) g.eachLayer(l => { if (l.getLatLng) pts.push(l.getLatLng()); });
     });
     return pts;
   };

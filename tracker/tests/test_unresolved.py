@@ -163,3 +163,75 @@ class UnresolvedCategoryTests(UnresolvedData):
         r = self.client.get(reverse("unresolved"), {"sort": "bogus"})
         self.assertEqual(r.context["sort"], "-date")
         self.assertContains(r, 'sort=category#legs">Category</a>')  # the category column header sorts
+
+
+class StudyAreaAndDepartureTests(TestCase):
+    """Legs outside the study area are not counted; a lost leg counts as resolved when the aircraft is next seen
+    departing a site soon after (as missions count it)."""
+
+    def setUp(self):
+        self.hosp = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40.0, lon=-89.0,
+                                        radius_m=300, elevation_ft=600)
+        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
+                                         inferred_base_lat=41.0, inferred_base_lon=-88.0)
+
+    def leg(self, at, end, state=Leg.LOST, alt=3000, site=None, start=(40.5, -89.5), start_site=None, minutes=20):
+        t = NOW + timedelta(minutes=at)
+        return Leg.objects.create(hex="a00001", aircraft=self.a, source="adsblol", start_ts=t,
+                                  end_ts=t + timedelta(minutes=minutes), start_lat=start[0], start_lon=start[1],
+                                  end_lat=end[0], end_lon=end[1], end_state=state, end_alt_ft=alt, end_site=site,
+                                  start_site=start_site)
+
+    def test_rate_counts_inside_the_area_and_departures_after_lost_signal(self):
+        from tracker.resolution import landing_rate
+        self.leg(0, (40.0, -89.0), state=Leg.LANDED, alt=None, site=self.hosp)        # resolved
+        lost = self.leg(60, (40.05, -89.05))                                            # lost 6 km out...
+        self.leg(110, (40.3, -89.3), start=(40.0, -89.0), start_site=self.hosp)        # ...then seen leaving A
+        self.leg(300, (40.6, -89.6))                                                    # lost, next leg 3 h later
+        self.leg(480, (38.0, -93.5), start=(38.5, -92.5))                               # outside the area
+        d = diagnose(Leg.objects.all(), "adsblol")
+        self.assertEqual((d.total, d.resolved, d.seen_departing, d.outside), (4, 2, 1, 1))
+        self.assertEqual(landing_rate(Leg.objects.all(), "adsblol"), (0.5, 2, 4))
+        cats = {r.pk: r.category for r in d.rows}
+        self.assertNotIn(lost.pk, cats)  # resolved, not listed
+        self.assertEqual(sorted(cats.values()), ["lost_high", "lost_high", "outside_area"])
+        self.assertEqual(d.counts["outside_area"], 1)
+
+    def test_lost_then_seen_leaving_its_base_that_is_not_a_site(self):
+        self.leg(0, (40.9, -88.1))                                   # lost on the way home
+        self.leg(30, (40.5, -88.5), start=(41.0003, -88.0))         # next seen leaving the base point
+        d = diagnose(Leg.objects.all(), "adsblol")
+        self.assertEqual(d.rows[0].category, "base_not_site")
+        self.assertEqual(dict(d.bases), {self.a.pk: 1})
+
+    def test_csv_says_where_the_aircraft_was_next_seen(self):
+        import csv
+        import io
+        admin = User.objects.create_user("boss", password="x", is_staff=True)
+        admin.groups.add(Group.objects.get(name="Admin"))
+        self.client.force_login(admin)
+        from tracker.geo import haversine_m
+        first = self.leg(0, (40.6, -89.6))
+        self.leg(200, (40.3, -89.3), start=(40.0, -89.0), start_site=self.hosp)  # 3 h later: too late to resolve it
+        lines = list(csv.reader(io.StringIO(self.client.get(reverse("unresolved_csv")).content.decode())))
+        rows = {int(line[0]): dict(zip(lines[1], line)) for line in lines[2:]}
+        row = rows[first.pk]
+        self.assertEqual((row["next_gap_minutes"], row["next_start_site"]), ("180.0", "Hospital A"))
+        self.assertAlmostEqual(float(row["next_start_km"]), haversine_m(40.6, -89.6, 40.0, -89.0) / 1000, places=1)
+        self.assertEqual([r["next_started_utc"] for pk, r in rows.items() if pk != first.pk], [""])  # nothing after
+
+    def test_signal_lost_map_layer(self):
+        viewer = User.objects.create_user("v", password="x")
+        viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.client.force_login(viewer)
+        self.leg(0, (40.61, -89.61))
+        self.leg(300, (40.62, -89.62))
+        self.leg(600, (38.0, -93.5))  # outside the area: not a coverage hole of ours
+        d = self.client.get(reverse("lost_data")).json()
+        self.assertEqual(d["top"], 2)
+        [(i, j, n, aircraft, agl)] = d["cells"]
+        self.assertEqual((n, aircraft, agl), (2, 1, 3000 - 650))
+        self.assertAlmostEqual((i + 0.5) * d["size"], 40.6, delta=d["size"])
+        r = self.client.get(reverse("site_map") + "?f=1&show=lost")
+        self.assertContains(r, 'value="lost" checked')
+        self.assertContains(r, "Signal lost")

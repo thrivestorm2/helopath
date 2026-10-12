@@ -9,6 +9,7 @@ urlpatterns = [
     path("aircraft/<int:pk>/apply/", views.aircraft_apply, name="aircraft_apply"),
     path("map/", views.site_map, name="site_map"),
     path("map/coverage.json", views.coverage_data, name="coverage_data"),
+    path("map/lost.json", views.lost_data, name="lost_data"),
     path("sites/", views.site_list, name="site_list"),
     path("sites/place/", views.site_place, name="site_place"),
     path("sites/faa/", views.faa_facility, name="faa_facility"),

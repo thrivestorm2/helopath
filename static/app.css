@@ -200,3 +200,5 @@ tr.op-row:hover td { background:#eef2f8; }
 tr.op-aircraft td:first-child { padding-left:2em; }
 tr.op-aircraft td { font-size:.92em; background:#fafbfd; }
 .leg-add { margin-left:8px; padding:3px 8px; font-size:.9em; }
+.lost-key { display:inline-block; width:12px; height:12px; border-radius:50%; background:#8e24aa; opacity:.6; border:1px solid #6a1b9a; vertical-align:middle; }
+#lost-legend { left:auto; right:12px; }  /* beside the coverage legend when both are on */

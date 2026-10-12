@@ -8,7 +8,9 @@ the border receiving areas, and infers their legs, landings, missions and patien
   asserts that a patient was on board, and the app holds **no patient information** of any kind.
 - **Private by design.** The running app requires a login; this repository contains the code only — no data, no
   credentials and no deployment secrets (they live in the hosting provider's encrypted settings).
-- The headline measure is the **resolved-landing rate**: legs ending at an identified site ÷ all legs.
+- The headline measure is the **resolved-landing rate**: of the legs ending inside the study area, those ending at an
+  identified site (or, when the signal was lost, whose aircraft is next seen departing a site within 2 hours) ÷ all
+  of them.
 
 Licensed under the [GNU Affero General Public License v3.0](LICENSE). Security issues: see [SECURITY.md](SECURITY.md).
 
@@ -110,8 +112,12 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   than as files, and systemd timers are replaced by the `run_worker` background worker.
 
 - `landed_observed` also covers an observed touchdown with **no** matching site (end_site empty). Without that,
-  scene landings and unknown bases could not feed missions or the cluster queue. The resolved-landing rate is
-  still "legs with an end site ÷ all legs", computed over discovered + confirmed aircraft (toggle for confirmed).
+  scene landings and unknown bases could not feed missions or the cluster queue. The resolved-landing rate counts
+  legs ending inside the study area only (legs ending outside it are listed as "Ended outside the study area"); a
+  lost-signal leg counts as resolved when the aircraft is next seen departing a site within
+  `MISSION_LOST_SIGNAL_BRIDGE_HOURS`, the same rule missions use. It is computed over discovered + confirmed
+  aircraft (toggle for confirmed). The map's "Signal lost" layer shows where aircraft lose signal at altitude: the
+  places where another adsb.lol receiver would help most.
 - `TracePoint` carries three extra fields beyond the spec's list: `new_leg` (flag 2), `stale` (flag 1) and
   `callsign`. Segmentation and hints need them.
 - When the inferred base is not a Site, the base is kept as coordinates and mission chaining uses a 300 m circle
