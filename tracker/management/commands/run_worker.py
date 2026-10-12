@@ -1,8 +1,9 @@
 """Background worker: the only long-running process besides the web server.
 
 Every 30 s it records a heartbeat, runs the oldest queued Operations task, and once a day
-(after NIGHTLY_UTC_HOUR:NIGHTLY_UTC_MINUTE) runs the nightly ingest. Queued rebuilds are
-processed as part of the nightly run, or straight away if one is waiting.
+(after NIGHTLY_UTC_HOUR:NIGHTLY_UTC_MINUTE) runs the nightly ingest. A full rebuild queued by an
+admin runs straight away; recounts and partial rebuilds run on their own shortly after the edits that
+need them, and pending full rebuilds (plus a weekly one) overnight (tracker.rebuilds).
 """
 import time
 
@@ -15,6 +16,7 @@ from tracker.ingest import process_rebuild_requests, run_nightly, utc_today
 from tracker.models import OpsTask, RebuildRequest, WorkerState
 from tracker.ops import recover_interrupted, run_task
 from tracker.places import fill_site_places, suggest_pending
+from tracker.rebuilds import process_overnight, process_quick
 
 
 def tick(now=None, log=print):
@@ -31,13 +33,16 @@ def tick(now=None, log=print):
 
     if RebuildRequest.objects.filter(processed_at__isnull=True).exists():
         WorkerState.objects.filter(pk=1).update(current="Rebuild")
-
-        def progress(message):
-            WorkerState.objects.filter(pk=1).update(heartbeat=timezone.now(), current=f"Rebuild: {message}"[:200])
-
-        process_rebuild_requests(progress)
-        WorkerState.objects.filter(pk=1).update(current="")
+        process_rebuild_requests()
         return "rebuild"
+
+    quick = process_quick(now)
+    if quick:
+        return f"quick update: {quick}"
+
+    overnight = process_overnight(now)
+    if overnight:
+        return overnight
 
     utc_now = now.astimezone(timezone.get_fixed_timezone(0))
     due = (utc_now.hour, utc_now.minute) >= (settings.NIGHTLY_UTC_HOUR, settings.NIGHTLY_UTC_MINUTE)

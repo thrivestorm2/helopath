@@ -67,7 +67,7 @@ python manage.py nightly
 # Background worker (production): runs nightly at 18:30 UTC plus Operations-page tasks.
 python manage.py run_worker
 
-# After changing sites or thresholds:
+# Full rebuild by hand (site edits apply on their own; threshold changes need this):
 python manage.py rebuild --source adsblol
 
 # Accounts (no self-signup):
@@ -149,12 +149,23 @@ droplet setup from the original spec (about $7–8/month) is kept in `deploy/dro
   it. They are records of their own: add them in the admin or by typing a name in a Review queue card (a new one
   takes that aircraft's operator), link aircraft to them, and open a program's page for its aircraft, missions and
   routes. Program pages count missions directly; flow aggregates and the CSV export stay per operator.
-- Rebuild banner: admins see "Rebuild needed…" at the top of every page after an edit that only applies on rebuild
-  (site saved or deactivated, weather hangar set) or after a deploy whose counting rules are newer than the last
-  rebuild queued. **Bump `PIPELINE_VERSION` in `tracker/inference/pipeline.py` with any change to legs, discovery,
-  missions or aggregates.** The banner's button queues the rebuild and clears it; it stays hidden while one waits.
-- Confirm/reject refreshes missions and aggregates immediately; site edits need a rebuild (queued button,
-  processed nightly, or `manage.py rebuild`).
+- Rebuilds come in three kinds (`tracker/rebuild_flag.py`, run by `tracker/rebuilds.py`):
+  - **Recount** (no legs re-derived): after a weather hangar, service period, or a site's type, reviewed flag or
+    FAA ID changes.
+  - **Partial**: after a site is added, moved, re-sized, re-elevated or deactivated, legs are re-derived only for
+    aircraft with a leg starting or ending within about 5 km of its old or new location (how a track is split into
+    legs never depends on sites; only the first and last points are matched to sites, within those distances), then
+    the recount. A test checks it gives exactly what a full rebuild gives.
+  - **Full**: everything from the raw traces.
+
+  Recounts and partials run on their own `QUICK_UPDATE_DELAY_S` (2 minutes) after the last edit, so a burst of edits
+  shares one run. Full rebuilds run on their own only overnight (`FULL_REBUILD_LOCAL_HOUR`, 2 am Chicago): after a
+  deploy with new counting rules, after FAA sites are seeded, when a partial would touch more than
+  `PARTIAL_MAX_SHARE` (40%) of aircraft, and every Sunday as a safety net. Admins see what is pending in a banner
+  (with **Run now** for a full rebuild), and each run with its step timings on the Operations page. Edits that change
+  no figures (a site's name, city, notes, social pages) need nothing. **Bump `PIPELINE_VERSION` in
+  `tracker/inference/pipeline.py` with any change to legs, discovery, missions or aggregates.**
+- Confirm/reject refreshes missions and aggregates immediately.
 
 ## Not verified from the build environment
 

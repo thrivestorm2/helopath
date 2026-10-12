@@ -55,10 +55,12 @@ def day_done(day, source):
 
 
 def process_rebuild_requests(progress=None):
+    from .rebuilds import run_full
+
     pending = RebuildRequest.objects.filter(processed_at__isnull=True)
     sources = set(pending.values_list("source", flat=True))
     for source in sources:
-        pipeline.rebuild(source, progress=progress)
+        run_full(source, "requested by an admin", progress=progress)
     pending.update(processed_at=timezone.now())
     return sources
 

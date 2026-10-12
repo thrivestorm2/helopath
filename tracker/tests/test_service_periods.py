@@ -11,7 +11,7 @@ from django.utils import timezone
 from tracker import periods
 from tracker.inference import pipeline
 from tracker.lookup import call_sign_suggestions
-from tracker.models import Aircraft, Leg, Mission, MonthlyAggregate, Operator, Program, ServicePeriod, Site, WorkerState
+from tracker.models import Aircraft, Leg, Mission, MonthlyAggregate, Operator, Program, ServicePeriod, Site
 from tracker.tests import PERIODS_INLINE
 
 migration = import_module("tracker.migrations.0024_service_periods_data")
@@ -55,7 +55,8 @@ class PeriodTests(TestCase):
         self.assertEqual((self.a.active_from, self.a.active_to, self.a.base, self.a.call_sign),
                          (date(2026, 10, 1), None, None, ""))
         self.assertEqual((self.a.operator, self.a.program, self.a.retired), (self.am, self.lf, False))
-        self.assertIn("service period changed for N911LF", WorkerState.get().rebuild_reason)
+        from tracker.rebuild_flag import quick_reasons
+        self.assertIn("service period changed for N911LF", quick_reasons())  # a recount, no legs
         self.assertContains(self.client.get(reverse("aircraft_detail", args=[self.a.pk])), "Service history")
 
     def test_retire_and_back_in_service(self):

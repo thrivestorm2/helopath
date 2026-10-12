@@ -5,6 +5,7 @@ Everything here can be dropped and rebuilt from retained raw files (guardrail 3)
 admin-owned Aircraft fields and cluster dismissals are never touched.
 """
 import logging
+import math
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
@@ -554,6 +555,45 @@ def build_downstream(source, progress=None):
     stats["aggregates"] = build_aggregates(source)
     progress("mapping coverage")
     stats["coverage"] = build_coverage(source)
+    return stats
+
+
+def area_reach_m(radius_m, max_site_radius_m):
+    """How far from a site a leg's first or last point can be and still be classified differently when that site
+    changes. Classification (legs.classify) looks at sites containing the point (their radius), within
+    LOW_SLOW_RADIUS_M and INFERRED_MAX_DIST_M of it, and then at the matched site's neighbours within
+    CONF_NEIGHBOR_RADIUS_M; how a track is split into legs and gaps rejoined does not depend on sites at all."""
+    containing = min(max_site_radius_m, 5000)  # SiteIndex.containing looks 5 km out
+    matched = max(radius_m, containing, settings.LOW_SLOW_RADIUS_M, settings.INFERRED_MAX_DIST_M)
+    return matched + settings.CONF_NEIGHBOR_RADIUS_M + 500  # + a margin: the last airborne point is used too
+
+
+def hexes_near(source, areas):
+    """Aircraft (hexes) with a leg starting or ending close enough to any of `areas` [(lat, lon, radius_m)] to be
+    affected by a change to a site there."""
+    from django.db.models import Max, Q
+
+    max_radius = Site.objects.filter(is_active=True).aggregate(m=Max("radius_m"))["m"] or 0
+    found = set()
+    for lat, lon, radius in areas:
+        reach = area_reach_m(radius or 0, max(max_radius, radius or 0))
+        dlat = reach / 111_000
+        dlon = reach / (111_000 * max(math.cos(math.radians(lat)), 0.2))
+        box = (Q(start_lat__range=(lat - dlat, lat + dlat), start_lon__range=(lon - dlon, lon + dlon))
+               | Q(end_lat__range=(lat - dlat, lat + dlat), end_lon__range=(lon - dlon, lon + dlon)))
+        for hexid, slat, slon, elat, elon in (Leg.objects.filter(box, source=source).exclude(hex__in=found)
+                                              .values_list("hex", "start_lat", "start_lon", "end_lat", "end_lon")):
+            if hexid not in found and (haversine_m(lat, lon, slat, slon) <= reach
+                                       or haversine_m(lat, lon, elat, elon) <= reach):
+                found.add(hexid)
+    return found
+
+
+def partial_rebuild(source, hexes, progress=None):
+    """Re-derive the legs of `hexes` only (see hexes_near), then recount everything downstream. Gives the same
+    result as a full rebuild when the only changes since the last one were to sites near those aircraft."""
+    stats = {"legs": build_legs(source, hexes, progress=progress)}
+    stats.update(build_downstream(source, progress))
     return stats
 
 
