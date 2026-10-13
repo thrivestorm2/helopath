@@ -25,8 +25,8 @@ class PatientFlowTests(TestCase):
         agg(None, self.a, "single_hospital_unresolved", 5)  # direction unknown: not counted
         agg(None, None, "reposition", 9)
         agg(self.b, self.a, "interfacility", 1, unreviewed=False)  # the confirmed-only rows
-        viewer = User.objects.create_user("v", password="x")
-        viewer.groups.add(Group.objects.get(name="Viewer"))
+        viewer = User.objects.create_user("v", password="x", is_staff=True)
+        viewer.groups.add(Group.objects.get(name="Admin"))  # counting tests: admins see discovered aircraft too
         self.client.force_login(viewer)
 
     def test_hospital_page_counts_received_and_sent(self):

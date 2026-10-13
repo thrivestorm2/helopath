@@ -6,6 +6,8 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
+from tracker.tests import login_viewer
+
 from tracker.models import Aircraft, Mission, Operator, Program, Site
 
 
@@ -25,8 +27,8 @@ class ProgramTests(TestCase):
             Mission.objects.create(aircraft=a, source="adsblol", start_ts=ts, end_ts=ts, label="interfacility",
                                    origin_site=hosp_a, destination_site=hosp_b, confidence=0.9, rule_fired="t",
                                    program=a.program, operator=a.operator)  # the period's, as the pipeline sets
-        self.viewer = User.objects.create_user("v", password="x")
-        self.viewer.groups.add(Group.objects.get(name="Viewer"))
+        self.viewer = User.objects.create_user("v", password="x", is_staff=True)
+        self.viewer.groups.add(Group.objects.get(name="Admin"))  # admins see discovered aircraft too
         self.client.force_login(self.viewer)
 
     def test_program_page(self):
@@ -40,10 +42,16 @@ class ProgramTests(TestCase):
         self.assertContains(r, "2 inferred missions")
         self.assertContains(r, "2026-09")
         self.assertContains(r, ">Hospital A</a>")
-        self.assertNotContains(r, ">Edit<")
         r = self.client.get(url + "?confirmed=1")
         self.assertNotContains(r, "N2LF")
         self.assertContains(r, "1 inferred missions")
+        # Viewers: confirmed aircraft only, with no toggle and no Edit link.
+        login_viewer(self.client)
+        r = self.client.get(url)
+        self.assertNotContains(r, "N2LF")
+        self.assertContains(r, "1 inferred missions")
+        self.assertNotContains(r, ">Edit<")
+        self.assertNotContains(r, "Confirmed aircraft only")
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         self.assertContains(self.client.get(url),
                             f'href="{reverse("admin:tracker_program_change", args=[self.program.pk])}?next={url}">Edit</a>')
@@ -118,6 +126,7 @@ class ProgramTests(TestCase):
         self.assertEqual(self.client.post(url, {"action": "program", "program_name": "X"}).status_code, 302)
 
     def test_viewers_cannot_set_program(self):
+        login_viewer(self.client)
         r = self.client.post(reverse("review_action", args=[self.d.pk]), {"action": "program", "program_name": "X"})
         self.assertEqual(r.status_code, 403)
         self.assertFalse(Program.objects.filter(name="X").exists())

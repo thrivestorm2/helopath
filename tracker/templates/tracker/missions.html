@@ -6,8 +6,10 @@
   <select name="operator"><option value="">Any operator</option>{% for o in operators %}<option value="{{ o.pk }}" {% if request.GET.operator == o.pk|stringformat:"s" %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
   <label class="muted">Min confidence <input type="number" name="min_conf" step="0.1" min="0" max="1" value="{{ request.GET.min_conf }}" style="width:5em"></label>
   {% include "tracker/_confirmed_toggle.html" %}
+  {% if day %}<input type="hidden" name="day" value="{{ day|date:'Y-m-d' }}">{% endif %}
   <button>Apply</button>
 </form>
+{% if day %}<p class="muted">Missions on {{ day|date:"l, M j" }} (Central time) · <a href="{% url 'missions' %}">All days</a></p>{% endif %}
 <div class="scroll"><table class="stack">
 <tr class="head"><th>Start</th><th>Aircraft</th><th>Operator</th><th>Label</th><th>Origin</th><th>Destination</th><th class="n">Confidence</th><th>Rule fired</th></tr>
 {% for m in page %}

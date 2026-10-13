@@ -207,3 +207,14 @@ tr.op-aircraft td { font-size:.92em; background:#fafbfd; }
 #lost-legend { left:auto; right:12px; }  /* beside the coverage legend when both are on */
 .import-preview td { overflow-wrap:anywhere; }
 .import-preview td[data-label="Details"] { text-align:left; }
+.daily-summary h2 { margin-top:0; }
+.daily-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
+.daily-stat { display:flex; flex-direction:column; gap:2px; padding:8px 10px; min-width:0; border:1px solid #e5e7eb; border-radius:8px; color:inherit; text-decoration:none; }
+.daily-stat:hover { background:#f6f8fb; }
+.daily-stat .k, .daily-notes .k { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; }
+.daily-stat .v { font-size:24px; font-weight:700; }
+.daily-stat .muted { font-size:12px; }
+@media (max-width:600px) { .daily-stat .k { font-size:10px; } .daily-stat .chg { font-size:12px; } }
+.daily-stat .chg { font-size:13px; font-weight:600; }
+.daily-notes { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+.daily-notes .k { margin-right:6px; }
