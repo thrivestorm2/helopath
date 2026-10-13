@@ -2,6 +2,7 @@
 {% block content %}
 <h1>Dashboard</h1>
 <form class="filters" method="get">{% include "tracker/_confirmed_toggle.html" %}</form>
+{% include "tracker/_daily_summary.html" %}
 <div class="grid">
   <div class="card stat headline">
     <div class="k">Resolved-landing rate, last 90 days</div>
@@ -11,7 +12,7 @@
   </div>
   <div class="card stat"><div class="k">Aircraft</div>
     <div class="v">{{ aircraft_by_status.confirmed|default:0 }}</div>
-    <div class="muted">confirmed · {{ aircraft_by_status.discovered|default:0 }} awaiting review · {{ aircraft_by_status.rejected|default:0 }} rejected</div></div>
+    <div class="muted">confirmed{% if is_admin %} · {{ aircraft_by_status.discovered|default:0 }} awaiting review · {{ aircraft_by_status.rejected|default:0 }} rejected{% endif %}</div></div>
   <div class="card stat"><div class="k">Days ingested</div><div class="v">{{ days_ingested }}</div></div>
   <div class="card stat"><div class="k">Last ingest</div>
     {% if last_run %}<div class="v" style="font-size:20px">{{ last_run.day }}</div>

@@ -1,4 +1,4 @@
-from tracker.tests import PERIODS_INLINE
+from tracker.tests import PERIODS_INLINE, login_viewer
 from datetime import date, datetime, timezone
 
 from django.contrib.auth.models import Group, User
@@ -25,8 +25,8 @@ class OperatorPageTests(TestCase):
             MonthlyAggregate.objects.create(source="adsblol", operator=None, base=None, month=date(2026, 9, 1),
                                             label="unknown", count=3, mean_confidence=0.3,
                                             includes_unreviewed=unreviewed)
-        viewer = User.objects.create_user("v", password="x")
-        viewer.groups.add(Group.objects.get(name="Viewer"))
+        viewer = User.objects.create_user("v", password="x", is_staff=True)
+        viewer.groups.add(Group.objects.get(name="Admin"))  # counting tests: admins see discovered aircraft too
         self.client.force_login(viewer)
 
     def test_dashboard_links_operator_and_base(self):
@@ -53,7 +53,9 @@ class OperatorPageTests(TestCase):
         self.assertContains(r, "Interfacility")
         self.assertContains(r, f'href="{reverse("site_detail", args=[self.hosp_a.pk])}">Hospital A</a>')
         self.assertContains(r, f'href="{reverse("site_detail", args=[self.base.pk])}">Base 12</a>')
-        self.assertNotContains(r, ">Edit<")  # viewers get no edit link
+        self.assertContains(r, ">Edit<")  # admins
+        login_viewer(self.client)
+        self.assertNotContains(self.client.get(reverse("operator_detail", args=[self.op.pk])), ">Edit<")
 
     def test_aircraft_pages_link_operator_and_base(self):
         url = reverse("operator_detail", args=[self.op.pk])
@@ -138,6 +140,7 @@ class OperatorPageTests(TestCase):
     def test_aircraft_page_edit_link_for_admins_only(self):
         url = reverse("aircraft_detail", args=[self.a.pk])
         edit = f'href="{reverse("admin:tracker_aircraft_change", args=[self.a.pk])}?next=/aircraft/{self.a.pk}/">Edit</a>'
+        login_viewer(self.client)
         self.assertNotContains(self.client.get(url), edit)
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         self.assertContains(self.client.get(url), edit)

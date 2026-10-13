@@ -17,6 +17,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -59,7 +60,14 @@ SOURCE = "adsblol"  # Phase 1 dashboards show one source; never mixed (guardrail
 
 
 def _confirmed_only(request):
-    return request.GET.get("confirmed") == "1"
+    """Only confirmed aircraft: always for viewers (they never see discovered ones), by the toggle for admins."""
+    return not is_admin(getattr(request, "user", None)) or request.GET.get("confirmed") == "1"
+
+
+def _toggle(request):
+    """The admins' "Confirmed aircraft only" toggle is on: kept in links. (Viewers always get confirmed aircraft
+    without it, so their links stay clean.)"""
+    return request.GET.get("confirmed") == "1" and is_admin(getattr(request, "user", None))
 
 
 def _statuses(request):
@@ -118,7 +126,9 @@ def dashboard(request):
                      .annotate(n=Sum("count"), scenes=Sum("count", filter=Q(label="scene")))
                      .order_by("-n", "destination_site__name")[:10])
     ok_runs = IngestRun.objects.filter(source=SOURCE, status=IngestRun.OK)
+    from .daily import daily_summary
     return render(request, "tracker/dashboard.html", {
+        "daily": daily_summary(SOURCE, _statuses(request)),
         "rate": rate, "resolved": resolved, "total": total,
         "months": [(m, legs_by_month[m], missions_by_month[m]) for m in months],
         "by_operator": [(pk, name, n, operator_link(request, pk))
@@ -127,12 +137,12 @@ def dashboard(request):
         "aircraft_by_status": dict(Aircraft.objects.values_list("status").annotate(n=Count("id"))),
         "days_ingested": ok_runs.values("day").distinct().count(),
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request),
     })
 
 
 def aircraft_list(request):
-    qs = Aircraft.objects.filter(status__in=Aircraft.VISIBLE).select_related("operator", "program", "base", "inferred_base")
+    qs = Aircraft.objects.filter(status__in=_statuses(request)).select_related("operator", "program", "base", "inferred_base")
     q = request.GET.get("q", "").strip()
     if q:
         qs = qs.filter(Q(tail_number__icontains=q) | Q(call_sign__icontains=q) | Q(icao_hex__icontains=q) | Q(make_model__icontains=q)
@@ -274,7 +284,9 @@ def _add_aircraft_offer(q):
 
 
 def aircraft_detail(request, pk):
-    aircraft = get_object_or_404(Aircraft, pk=pk, status__in=Aircraft.VISIBLE)
+    # Viewers only ever see confirmed aircraft; admins see discovered ones too, whatever the toggle.
+    aircraft = get_object_or_404(Aircraft, pk=pk, status__in=Aircraft.VISIBLE if is_admin(request.user)
+                                 else (Aircraft.CONFIRMED,))
     legs = aircraft.legs.filter(source=SOURCE).select_related("start_site", "end_site").order_by("-start_ts")
     page = _page(request, legs, 25)
     # Weather hangar comes from the base: the one set on it, else the base's top suggestion (marked unconfirmed).
@@ -377,7 +389,7 @@ def patient_flows(request, site, limit=25, show_months=3):
     aggs = _patient_aggs(request)
     inbound = aggs.filter(destination_site=site, label__in=PATIENT_IN)
     outbound = aggs.filter(origin_site=site, label="interfacility")
-    keep = "?confirmed=1" if _confirmed_only(request) else ""
+    keep = "?confirmed=1" if _toggle(request) else ""
     scene_map = route_map_url(request, None, site, "scene")
     received, sent = defaultdict(Counter), defaultdict(Counter)  # (name, link) -> month -> patients
     for label, pk, name, month, n in inbound.values_list("label", "origin_site", "origin_site__name", "month",
@@ -436,7 +448,7 @@ def site_list(request):
                       for s in qs] if view == "map" else [],
         "view": view, "sort": sort, "filter_qs": _filter_qs(request), "types": Site.TYPE_CHOICES,
         "states": Site.objects.exclude(state="").values_list("state", flat=True).distinct().order_by("state"),
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request),
     })
 
 
@@ -444,9 +456,9 @@ def operator_link(request, operator_id, site=None):
     """Operator page, or for unassigned aircraft the aircraft list filtered to them (and to those that landed at
     `site`, when given); keeps the confirmed-only view."""
     if operator_id:
-        return reverse("operator_detail", args=[operator_id]) + ("?confirmed=1" if _confirmed_only(request) else "")
+        return reverse("operator_detail", args=[operator_id]) + ("?confirmed=1" if _toggle(request) else "")
     return (reverse("aircraft_list") + "?operator=none" + (f"&site={site.pk}" if site else "")
-            + ("&status=confirmed" if _confirmed_only(request) else ""))
+            + ("&status=confirmed" if _toggle(request) else ""))
 
 
 def site_detail(request, pk):
@@ -480,7 +492,7 @@ def site_detail(request, pk):
         # Once a hangar is set the header just names it; changing it is done on the admin Edit page.
         "hangar_suggestion": next(iter(suggest_hangars(site, SOURCE, limit=1)), None)
         if n_based and not site.weather_hangar_id else None,
-        "total": arrivals.count(), "confirmed_only": _confirmed_only(request),
+        "total": arrivals.count(), "confirmed_only": _toggle(request),
     })
 
 
@@ -488,7 +500,7 @@ def route_map_url(request, origin, destination, label, **scope):
     """Map of the scene / unknown landings on a route whose origin or destination is not a known site."""
     params = {"origin": getattr(origin, "pk", None) or "none", "dest": getattr(destination, "pk", None) or "none",
               "label": label, **{k: v if v is not None else "none" for k, v in scope.items()}}
-    if _confirmed_only(request):
+    if _toggle(request):
         params["confirmed"] = 1
     return reverse("route_map") + "?" + urlencode(params)
 
@@ -543,7 +555,7 @@ def route_map(request):
         "points": points[:3000], "n_points": len(points), "n_missions": len(missions),
         "origin": pick(Site, "origin"), "destination": pick(Site, "dest"),
         "label": dict(Mission.LABELS).get(get.get("label"), "Any type"), "scope": [s for s in scope if s],
-        "month": month, "confirmed_only": _confirmed_only(request),
+        "month": month, "confirmed_only": _toggle(request),
     })
 
 
@@ -568,7 +580,7 @@ def program_detail(request, pk):
         "month_rows": [(m, [per_month[m][code] for code in labels], sum(per_month[m].values())) for m in months],
         "total": sum(sum(c.values()) for c in per_month.values()),
         "flows": _route_rows(request, flows, program=program.pk),
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request),
     })
 
 
@@ -645,7 +657,7 @@ def operator_detail(request, pk):
         "program_groups": program_groups if named else [],
         "no_program": groups.get(None, []) if named else [],
         "no_program_open": len(groups.get(None, [])) <= 10,  # a long list starts collapsed too
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request),
     })
 
 
@@ -655,11 +667,19 @@ def missions(request):
     for param, field in (("label", "label"), ("aircraft", "aircraft_id"), ("operator", "operator_id")):
         if request.GET.get(param):
             qs = qs.filter(**{field: request.GET[param]})
+    try:
+        day = parse_date(request.GET.get("day", ""))
+    except ValueError:
+        day = None
+    if day:  # one local day (the dashboard's daily summary links here)
+        from .daily import _window
+        start, end = _window(day)
+        qs = qs.filter(start_ts__gte=start, start_ts__lt=end)
     if request.GET.get("min_conf"):
         qs = qs.filter(confidence__gte=float(request.GET["min_conf"]))
     return render(request, "tracker/missions.html", {
         "page": _page(request, qs), "labels": Mission.LABELS, "operators": Operator.objects.all(),
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request), "day": day,
     })
 
 
@@ -679,7 +699,7 @@ def flows(request):
     return render(request, "tracker/flows.html", {
         "rows": _flow_rows(request)[:500], "operators": Operator.objects.all(), "labels": Mission.LABELS,
         "months": MonthlyAggregate.objects.filter(source=SOURCE).dates("month", "month", order="DESC"),
-        "confirmed_only": _confirmed_only(request), "query": request.GET.urlencode(),
+        "confirmed_only": _toggle(request), "query": request.GET.urlencode(),
     })
 
 
@@ -755,7 +775,7 @@ def unresolved(request):
         "page": page, "cat": category, "sort": sort, "categories": list(CATEGORY_TITLES.items()),
         "cat_title": CATEGORY_TITLES.get(category, ""), "filter_qs": _filter_qs(request),
         "spots": [(c, n) for c, n in d.spots.most_common(15)],
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request),
     })
 
 
@@ -882,7 +902,7 @@ def quality(request):
         "end_states": Leg.END_STATES, "zero_sites": zero.order_by("state", "name"),
         "unreviewed_sites": Site.objects.filter(is_active=True, reviewed=False).count(),
         "gaps_rejoined": legs.aggregate(n=Sum("gaps_bridged"))["n"] or 0,
-        "confirmed_only": _confirmed_only(request),
+        "confirmed_only": _toggle(request),
     })
 
 
@@ -1242,12 +1262,12 @@ def site_map(request):
     return render(request, "tracker/site_map.html", {
         "markers": markers, "shown": shown, "counts": [(k, counts[k]) for k in MAP_KINDS], "n_spots": counts["spot"],
         "operators": Operator.objects.order_by("name"), "programs": Program.objects.select_related("operator"),
-        "operator": operator, "program": program, "confirmed_only": _confirmed_only(request),
+        "operator": operator, "program": program, "confirmed_only": _toggle(request),
         "coverage_days": settings.COVERAGE_DAYS,
     })
 
 
-def _open_clusters():
+def _open_clusters(statuses=Aircraft.VISIBLE):
     """Undismissed clusters not yet covered by an active site (one added since the last refresh), each with
     `recent_landings`: landings away from sites in the last SPOT_MAP_DAYS days, counted for the nearest
     cluster within the cluster radius (as the clusters were built). Most landings first."""
@@ -1257,7 +1277,7 @@ def _open_clusters():
     recent = Counter()
     index = SiteIndex(clusters)
     for lat, lon in Leg.objects.filter(
-            source=SOURCE, end_state=Leg.LANDED, end_site__isnull=True, aircraft__status__in=Aircraft.VISIBLE,
+            source=SOURCE, end_state=Leg.LANDED, end_site__isnull=True, aircraft__status__in=statuses,
             end_ts__gte=timezone.now() - timedelta(days=settings.SPOT_MAP_DAYS)).values_list("end_lat", "end_lon"):
         near = index.within(lat, lon, settings.CLUSTER_RADIUS_M)
         if near:
@@ -1275,7 +1295,7 @@ def _short_date(d):
 def _spot_markers(request):
     """Repeat landing spots that are not sites yet (the Cluster queue), for the map's "Unadded spots" layer.
     Admins get a link to the new-site form pre-filled for the spot, returning to the map after saving."""
-    clusters = [c for c in _open_clusters() if c.recent_landings >= settings.SPOT_MAP_MIN_LANDINGS]
+    clusters = [c for c in _open_clusters(_statuses(request)) if c.recent_landings >= settings.SPOT_MAP_MIN_LANDINGS]
     admin = is_admin(request.user)
     if admin:
         _add_site_links(clusters, next_url=request.get_full_path())

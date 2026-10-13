@@ -241,8 +241,8 @@ class PipelineTests(TestCase):
 
     def test_pages_render_with_data(self):
         self._ingest_all()
-        viewer = User.objects.create_user("v", password="x")
-        viewer.groups.add(Group.objects.get(name="Viewer"))
+        viewer = User.objects.create_user("v", password="x", is_staff=True)
+        viewer.groups.add(Group.objects.get(name="Admin"))  # counting tests: admins see discovered aircraft too
         self.client.force_login(viewer)
         a = Aircraft.objects.get()
         r = self.client.get(reverse("dashboard"))
