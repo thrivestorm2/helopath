@@ -1,32 +1,60 @@
 {% load humanize %}{% with d=daily %}
-<div class="card daily-summary">
+<section class="card daily-summary" aria-label="Daily summary">
   {% if not d.day %}
-  <h2>Daily summary</h2>
+  <div class="ds-head"><span class="ds-kicker">Daily summary</span></div>
   <p class="muted">No full day of data yet{% if d.failed %}: the latest download failed (see the <a href="{% url 'ingest_log' %}">ingest log</a>){% endif %}.</p>
   {% else %}
-  <h2>{{ d.day|date:"l, M j" }} <span class="muted">· daily summary</span></h2>
-  <div class="daily-stats">
-    <a class="daily-stat" href="{% url 'missions' %}?day={{ d.day|date:'Y-m-d' }}{% if confirmed_only %}&amp;confirmed=1{% endif %}">
-      <span class="k">Missions</span><span class="v">{{ d.missions.value|intcomma }}</span>
-      <span class="chg">{{ d.missions.label }}</span>
-      <span class="muted">{{ d.by_label.scene }} scene · {{ d.by_label.interfacility }} interfacility · {{ d.by_label.other }} other</span></a>
-    <a class="daily-stat" href="{% url 'unresolved' %}{% if confirmed_only %}?confirmed=1{% endif %}">
-      <span class="k">Flights (legs)</span><span class="v">{{ d.legs.value|intcomma }}</span>
-      <span class="chg">{{ d.legs.label }}</span>
-      <span class="muted">{% if d.rate is not None %}{% widthratio d.rate 1 100 %}% resolved{% if d.rate_label %} · {{ d.rate_label }}{% endif %}{% else %}no flights in the study area{% endif %}</span></a>
-    <a class="daily-stat" href="{% url 'aircraft_list' %}{% if confirmed_only %}?status=confirmed{% endif %}">
-      <span class="k">Aircraft that flew</span><span class="v">{{ d.flew }}</span>
-      <span class="muted">of {{ d.fleet }} {% if not is_admin or confirmed_only %}confirmed {% endif %}in service</span></a>
+  <div class="ds-head">
+    <h2>{{ d.day|date:"D, M j" }}</h2>
+    <span class="ds-kicker">Daily summary{% if d.days_old > 1 %} · <span class="ds-stale">{{ d.days_old }} days ago</span>{% endif %}</span>
   </div>
-  <ul class="daily-notes">
-    {% if d.busiest_aircraft %}<li><span class="k">Busiest aircraft</span> <a href="{% url 'aircraft_detail' d.busiest_aircraft.0.pk %}">{{ d.busiest_aircraft.0.display_name }}</a> · {{ d.busiest_aircraft.1 }} mission{{ d.busiest_aircraft.1|pluralize }}</li>{% endif %}
-    {% if d.busiest_hospital %}<li><span class="k">Busiest receiving hospital</span> <a href="{% url 'site_detail' d.busiest_hospital.0.pk %}">{{ d.busiest_hospital.0.name }}</a> · {{ d.busiest_hospital.1 }} arrival{{ d.busiest_hospital.1|pluralize }}</li>{% endif %}
-    {% if d.top_route %}<li><span class="k">Top route</span> {% if d.top_route.0 %}<a href="{% url 'site_detail' d.top_route.0.pk %}">{{ d.top_route.0.name }}</a>{% else %}scene / unknown{% endif %} → {% if d.top_route.1 %}<a href="{% url 'site_detail' d.top_route.1.pk %}">{{ d.top_route.1.name }}</a>{% else %}unknown{% endif %} <span class="muted">({{ d.top_route.2|lower }})</span> · {{ d.top_route.3 }}</li>{% endif %}
-    {% if is_admin and d.new_aircraft or is_admin and d.new_spots %}<li><span class="k">New</span>
-      {% if d.new_aircraft %}<a href="{% url 'review_queue' %}">{{ d.new_aircraft|length }} aircraft discovered</a>{% endif %}{% if d.new_aircraft and d.new_spots %} · {% endif %}
-      {% if d.new_spots %}<a href="{% url 'cluster_queue' %}">{{ d.new_spots }} new landing spot{{ d.new_spots|pluralize }}</a>{% endif %}</li>{% endif %}
-    {% if d.quiet %}<li><span class="k">Gone quiet</span> {% for a, days in d.quiet %}<a href="{% url 'aircraft_detail' a.pk %}">{{ a.display_name }}</a> <span class="muted">({{ days }} days)</span>{% if not forloop.last %}, {% endif %}{% endfor %}</li>{% endif %}
-    <li><span class="k">Data</span> {% if d.failed %}<span class="badge failed">latest download failed</span> <a href="{% url 'ingest_log' %}">ingest log</a>{% else %}downloaded OK{% endif %}{% if d.lost_share is not None %} · {% widthratio d.lost_share 1 100 %}% of flights lost signal{% endif %}</li>
-  </ul>
+
+  <div class="ds-tiles">
+    <a class="ds-tile" href="{% url 'missions' %}?day={{ d.day|date:'Y-m-d' }}{% if confirmed_only %}&amp;confirmed=1{% endif %}">
+      <span class="ds-k">Missions</span>
+      <span class="ds-v">{{ d.missions.value|intcomma }}</span>
+      {% if d.missions.pill %}<span class="ds-pill {{ d.missions.pill.1 }}">{{ d.missions.pill.0 }}</span>{% endif %}
+    </a>
+    <a class="ds-tile" href="{% url 'unresolved' %}{% if confirmed_only %}?confirmed=1{% endif %}">
+      <span class="ds-k">Flights</span>
+      <span class="ds-v">{{ d.legs.value|intcomma }}</span>
+      {% if d.legs.pill %}<span class="ds-pill {{ d.legs.pill.1 }}">{{ d.legs.pill.0 }}</span>{% endif %}
+      {% if d.rate is not None %}<span class="ds-sub">{% widthratio d.rate 1 100 %}% resolved{% if d.rate_pill %} <span class="ds-pill {{ d.rate_pill.1 }}">{{ d.rate_pill.0 }}</span>{% endif %}</span>{% endif %}
+    </a>
+    <a class="ds-tile" href="{% url 'aircraft_list' %}{% if confirmed_only %}?status=confirmed{% endif %}">
+      <span class="ds-k">Aircraft</span>
+      <span class="ds-v">{{ d.flew }}</span>
+      <span class="ds-sub">of {{ d.fleet }} flew</span>
+    </a>
+  </div>
+
+  {% if d.bar %}
+  <div class="ds-bar" role="img" aria-label="Missions: {% for k, label, n, pct in d.bar %}{{ n }} {{ label|lower }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+    {% for k, label, n, pct in d.bar %}<span class="ds-seg {{ k }}" style="width:{{ pct|floatformat:2 }}%"></span>{% endfor %}
+  </div>
+  <ul class="ds-legend">{% for k, label, n, pct in d.bar %}<li><span class="ds-dot {{ k }}"></span>{{ label }} <strong>{{ n }}</strong></li>{% endfor %}</ul>
   {% endif %}
-</div>{% endwith %}
+
+  <ul class="ds-rows">
+    {% if d.busiest_aircraft %}<li><a href="{% url 'aircraft_detail' d.busiest_aircraft.0.pk %}">
+      <span class="ds-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></span>
+      <span class="ds-text"><span class="ds-label">Busiest aircraft</span><span class="ds-val">{{ d.busiest_aircraft.0.display_name }} · {{ d.busiest_aircraft.1 }} mission{{ d.busiest_aircraft.1|pluralize }}</span></span></a></li>{% endif %}
+    {% if d.busiest_hospital %}<li><a href="{% url 'site_detail' d.busiest_hospital.0.pk %}">
+      <span class="ds-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"/></svg></span>
+      <span class="ds-text"><span class="ds-label">Busiest hospital</span><span class="ds-val">{{ d.busiest_hospital.0.name }} · {{ d.busiest_hospital.1 }} arrival{{ d.busiest_hospital.1|pluralize }}</span></span></a></li>{% endif %}
+    {% if d.top_route %}<li><a href="{% url 'site_detail' d.top_route.4.pk %}">
+      <span class="ds-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h12l-3-3 1.4-1.4L20 8l-5.6 5.4L13 12l3-3H4zm16 10H8l3 3-1.4 1.4L4 16l5.6-5.4L11 12l-3 3h12z"/></svg></span>
+      <span class="ds-text"><span class="ds-label">Top route</span><span class="ds-val">{% if d.top_route.0 %}{{ d.top_route.0.name }}{% else %}Scene{% endif %} → {% if d.top_route.1 %}{{ d.top_route.1.name }}{% else %}unknown{% endif %} · {{ d.top_route.3 }}</span></span></a></li>{% endif %}
+    {% if is_admin and d.new_aircraft or is_admin and d.new_spots %}<li><a href="{% if d.new_aircraft %}{% url 'review_queue' %}{% else %}{% url 'cluster_queue' %}{% endif %}">
+      <span class="ds-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z"/></svg></span>
+      <span class="ds-text"><span class="ds-label">New</span><span class="ds-val">{% if d.new_aircraft %}{{ d.new_aircraft|length }} aircraft{% endif %}{% if d.new_aircraft and d.new_spots %} · {% endif %}{% if d.new_spots %}{{ d.new_spots }} landing spot{{ d.new_spots|pluralize }}{% endif %}</span></span></a></li>{% endif %}
+    {% if d.quiet %}<li><a href="{% url 'aircraft_list' %}?sort=last_seen">
+      <span class="ds-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg></span>
+      <span class="ds-text"><span class="ds-label">Gone quiet</span><span class="ds-val">{% for a, days in d.quiet|slice:":3" %}{{ a.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if d.quiet|length > 3 %} +{{ d.quiet|length|add:"-3" }}{% endif %} <span class="muted">· 30+ days</span></span></span></a></li>{% endif %}
+    <li><a href="{% url 'ingest_log' %}">
+      <span class="ds-ico" aria-hidden="true"><span class="ds-status {% if d.failed %}bad{% else %}good{% endif %}"></span></span>
+      <span class="ds-text"><span class="ds-label">Data</span><span class="ds-val">{% if d.failed %}Latest download failed{% else %}Downloaded OK{% endif %}{% if d.lost_share is not None %} · {% widthratio d.lost_share 1 100 %}% lost signal{% endif %}</span></span></a></li>
+  </ul>
+  <p class="ds-foot">Changes compare with the average day over the previous 4 weeks.</p>
+  {% endif %}
+</section>{% endwith %}

@@ -16,7 +16,8 @@ from .models import Aircraft, IngestRun, LandingCluster, Leg, Mission, Site
 from .resolution import landing_rate
 
 BASELINE_DAYS = 28
-QUIET_DAYS = 7
+QUIET_DAYS = 30          # a confirmed aircraft unseen this long is listed as gone quiet...
+QUIET_SHOW_DAYS = 7      # ...for this many days, then drops off (long-quiet aircraft are usually retired or sold)
 LOOK_BACK_DAYS = 10  # how far back to look for a fully ingested day
 
 
@@ -63,6 +64,16 @@ class Change:
         return f"{'▲' if p > 0 else '▼'} {abs(p)}% vs usual"
 
     @property
+    def pill(self):
+        """('+43%', 'up' | 'down' | 'flat') for the tile's pill, or None with no history."""
+        p = self.percent
+        if p is None:
+            return None
+        if abs(p) < 3:
+            return ("≈", "flat")
+        return (f"{'+' if p > 0 else '−'}{abs(p)}%", "up" if p > 0 else "down")
+
+    @property
     def usual_text(self):
         return "" if self.usual is None else f"usual {self.usual:.0f}"
 
@@ -72,10 +83,21 @@ class DailySummary:
     day: object = None
     failed: bool = False
     missions: Change = None
-    by_label: dict = field(default_factory=dict)      # scene / interfacility / other -> count
+    by_label: dict = field(default_factory=dict)      # scene / interfacility / unknown -> count (no repositions)
+    days_old: int = 0                                  # how many days before today the summarised day is
     legs: Change = None
     rate: float = None                                 # resolved-landing rate that day (0-1)
     rate_change: float = None                          # in percentage points against the usual day
+
+    @property
+    def rate_pill(self):
+        """('+2 pts', 'good' | 'bad' | 'flat') for the resolved rate against the usual day, or None."""
+        if self.rate_change is None:
+            return None
+        if abs(self.rate_change) < 1:
+            return ("≈", "flat")
+        return (f"{'+' if self.rate_change > 0 else '−'}{abs(self.rate_change):.0f} pts",
+                "good" if self.rate_change > 0 else "bad")
 
     @property
     def rate_label(self):
@@ -91,7 +113,15 @@ class DailySummary:
     top_route: tuple = None                            # (origin site or None, destination site or None, label, n)
     new_aircraft: list = field(default_factory=list)   # discovered that day (admins)
     new_spots: int = 0                                 # landing spots first used that day (admins)
-    quiet: list = field(default_factory=list)          # [(aircraft, days since last seen)]
+    quiet: list = field(default_factory=list)          # [(aircraft, days since last seen)], newly quiet first
+
+    @property
+    def bar(self):
+        """[(key, label, count, percent)] for the mission bar, skipping empty parts."""
+        total = sum(self.by_label.values())
+        return [(k, label, self.by_label[k], 100 * self.by_label[k] / total)
+                for k, label in (("scene", "Scene"), ("interfacility", "Interfacility"), ("unknown", "Unknown"))
+                if total and self.by_label[k]]
     lost_share: float = None                           # share of legs that ended with the signal lost
 
 
@@ -115,8 +145,10 @@ def daily_summary(source, statuses, today=None):
 
     s.missions = Change(today_missions.count(), per_day(missions))
     labels = Counter(today_missions.values_list("label", flat=True))
+    # The mission bar: patient missions and those whose direction is unknown; repositions are left out.
     s.by_label = {"scene": labels["scene"], "interfacility": labels["interfacility"],
-                  "other": sum(labels.values()) - labels["scene"] - labels["interfacility"]}
+                  "unknown": labels["unknown"] + labels["single_hospital_unresolved"]}
+    s.days_old = ((today or timezone.localdate()) - day).days
     s.legs = Change(today_legs.count(), per_day(legs))
 
     rate, _, total = landing_rate(today_legs, source)
@@ -130,7 +162,7 @@ def daily_summary(source, statuses, today=None):
     s.flew = today_legs.values("aircraft").distinct().count()
     s.fleet = Aircraft.objects.filter(status__in=statuses, retired=False).count()
 
-    by_aircraft = Counter(today_missions.values_list("aircraft", flat=True))
+    by_aircraft = Counter(today_missions.exclude(label="reposition").values_list("aircraft", flat=True))
     if by_aircraft:
         pk, n = by_aircraft.most_common(1)[0]
         s.busiest_aircraft = (Aircraft.objects.get(pk=pk), n)
@@ -140,18 +172,22 @@ def daily_summary(source, statuses, today=None):
     if arrivals:
         pk, n = arrivals.most_common(1)[0]
         s.busiest_hospital = (Site.objects.get(pk=pk), n)
-    routes = Counter(today_missions.exclude(label="reposition")
-                     .values_list("origin_site", "destination_site", "label"))
+    # Top route: at least one end must be a known site ("unknown -> unknown" says nothing).
+    routes = Counter(r for r in today_missions.exclude(label="reposition")
+                     .values_list("origin_site", "destination_site", "label") if r[0] or r[1])
     if routes:
         (origin, dest, label), n = routes.most_common(1)[0]
         sites = Site.objects.in_bulk([x for x in (origin, dest) if x])
-        s.top_route = (sites.get(origin), sites.get(dest), dict(Mission.LABELS).get(label, label), n)
+        # (origin, destination, label, missions, the site the row links to: the destination if known)
+        s.top_route = (sites.get(origin), sites.get(dest), dict(Mission.LABELS).get(label, label), n,
+                       sites.get(dest) or sites.get(origin))
 
     s.new_aircraft = list(Aircraft.objects.filter(discovered_at__gte=start, discovered_at__lt=end,
                                                   status__in=Aircraft.VISIBLE))
     s.new_spots = LandingCluster.objects.filter(source=source, dismissed=False,
                                                 first_seen__gte=start, first_seen__lt=end).count()
-    quiet_before = end - timedelta(days=QUIET_DAYS)
+    # Gone quiet: confirmed aircraft last seen QUIET_DAYS to QUIET_DAYS + QUIET_SHOW_DAYS days before the day's end.
     s.quiet = [(a, (end - a.last_seen).days) for a in Aircraft.objects.filter(
-        status=Aircraft.CONFIRMED, retired=False, last_seen__lt=quiet_before).order_by("last_seen")[:5]]
+        status=Aircraft.CONFIRMED, retired=False, last_seen__lt=end - timedelta(days=QUIET_DAYS),
+        last_seen__gte=end - timedelta(days=QUIET_DAYS + QUIET_SHOW_DAYS)).order_by("-last_seen")]
     return s
