@@ -5,6 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from tracker.models import Aircraft, AutoConfirmRule, MonthlyAggregate, OpsTask, Operator, Program
+from tracker.tests import test_operator
 
 
 class OperatorAcquiredTests(TestCase):
@@ -59,7 +60,7 @@ class OperatorAcquiredTests(TestCase):
 
     def test_every_aircraft_in_the_programs_follows_the_buyer(self):
         stray = Aircraft.objects.create(tail_number="N7LF", icao_hex="a00007", status=Aircraft.CONFIRMED,
-                                        program=self.sub)  # in the acquired operator's program, no operator
+                                        program=self.sub, operator=test_operator())  # in the acquired operator's program, no operator
         named = Program.objects.create(name="Life Flight Network")  # an existing same-named program
         elsewhere = Operator.objects.create(name="Other Co")
         old = Aircraft.objects.create(tail_number="N8LF", icao_hex="a00008", status=Aircraft.CONFIRMED,

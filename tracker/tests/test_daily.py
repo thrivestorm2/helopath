@@ -10,6 +10,7 @@ from tracker.models import Aircraft, IngestRun, Mission
 
 from . import login_viewer
 from . import test_pipeline as tp
+from tracker.tests import test_operator
 
 
 def run(day, status=IngestRun.OK):
@@ -96,8 +97,8 @@ class CardRulesTests(TestCase):
         run(self.day)
         run(self.day + timedelta(days=1))
         self.hosp = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40, lon=-89)
-        self.a = Aircraft.objects.create(tail_number="N1A", icao_hex="a00001", status=Aircraft.CONFIRMED)
-        self.b = Aircraft.objects.create(tail_number="N2B", icao_hex="a00002", status=Aircraft.CONFIRMED)
+        self.a = Aircraft.objects.create(tail_number="N1A", icao_hex="a00001", status=Aircraft.CONFIRMED, operator=test_operator())
+        self.b = Aircraft.objects.create(tail_number="N2B", icao_hex="a00002", status=Aircraft.CONFIRMED, operator=test_operator())
 
         def mission(aircraft, label, hour, origin=None, dest=None):
             t = datetime.combine(self.day, time(hour), tzinfo=local_tz())
@@ -133,7 +134,7 @@ class CardRulesTests(TestCase):
         end = datetime.combine(self.day + timedelta(days=1), time.min, tzinfo=local_tz())
         for tail, days in (("N29Q", 29), ("N31Q", 31), ("N36Q", 36), ("N38Q", 38)):
             Aircraft.objects.create(tail_number=tail, icao_hex=f"b000{days}", status=Aircraft.CONFIRMED,
-                                    last_seen=end - timedelta(days=days, hours=1))
+                                    last_seen=end - timedelta(days=days, hours=1), operator=test_operator())
         self.assertEqual([a.tail_number for a, _ in self.summary().quiet], ["N31Q", "N36Q"])
 
     def test_pills_and_stale_label(self):

@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from tracker.models import Aircraft, Leg, Operator, Program, Site
+from tracker.tests import test_operator
 
 NO_QUALITY = "ADS-B quality: not enough data"  # too few flights in these fixtures to score
 
@@ -110,7 +111,7 @@ class UnaddedSpotTests(TestCase):
         # Recent landings: 3 at the spot (shown); at a second spot 2 recent and 5 older ones (not shown).
         quiet = LandingCluster.objects.create(source="adsblol", lat=40.8, lon=-88.9, landing_count=7,
                                               distinct_aircraft=1, first_seen=now, last_seen=now)
-        ac = Aircraft.objects.create(tail_number="N1", icao_hex="b00001", status=Aircraft.CONFIRMED)
+        ac = Aircraft.objects.create(tail_number="N1", icao_hex="b00001", status=Aircraft.CONFIRMED, operator=test_operator())
         for lat, lon, days in [(40.2, -88.3, 1), (40.2001, -88.3, 5), (40.2, -88.3001, 80),
                                (40.8, -88.9, 2), (40.8, -88.9, 3)] + [(40.8, -88.9, 120)] * 5:
             ts = now - timedelta(days=days)

@@ -5,7 +5,11 @@ Flights count toward the period in effect on their (local) date; flights after a
 or before its first period, are not counted."""
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from django.conf import settings
+from django.db.models import Q
 
 from .models import Aircraft, ServicePeriod
 
@@ -103,3 +107,25 @@ def spans_by_aircraft(aircraft_ids=None):
     for p in ServicePeriod.objects.filter(aircraft__in=qs).select_related("base").order_by("end"):
         past.setdefault(p.aircraft_id, []).append(p)
     return {a.pk: spans(a, past.get(a.pk, [])) for a in qs}
+
+
+def confirmed_q():
+    """Q on Leg or Mission for flights that count as confirmed: the aircraft is confirmed and its service period
+    on the flight's (local) date has an operator. A past period with no operator is unconfirmed for its dates."""
+    tz = ZoneInfo(settings.LOCAL_TZ)
+    q = Q(aircraft__status=Aircraft.CONFIRMED)
+    for aircraft_id, start, end in ServicePeriod.objects.filter(
+            operator__isnull=True, aircraft__status=Aircraft.CONFIRMED).values_list("aircraft_id", "start", "end"):
+        gap = Q(aircraft_id=aircraft_id, start_ts__lt=datetime.combine(end + timedelta(days=1), time.min, tzinfo=tz))
+        if start:
+            gap &= Q(start_ts__gte=datetime.combine(start, time.min, tzinfo=tz))
+        q &= ~gap
+    return q
+
+
+def flights_q(statuses):
+    """Q on Leg or Mission for aircraft with these statuses; confirmed-only also leaves out periods with no
+    operator (see confirmed_q)."""
+    if tuple(statuses) == (Aircraft.CONFIRMED,):
+        return confirmed_q()
+    return Q(aircraft__status__in=statuses)

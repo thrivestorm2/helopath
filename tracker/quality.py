@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from .geo import SiteIndex
 from .models import Leg, Site
+from .periods import flights_q
 
 WEIGHTS = {"observed": 1.0, "inferred": 0.5, "dep_ground": 1.0, "dep_air": 0.0, "lost": 0.0}
 
@@ -60,7 +61,7 @@ def site_quality(sites, statuses, source=None, days=None):
     since = timezone.now() - timedelta(days=days or settings.QUALITY_DAYS)
     pks = [s.pk for s in sites]
     out = {pk: Quality() for pk in pks}
-    legs = Leg.objects.filter(source=source, aircraft__status__in=statuses, start_ts__gte=since)
+    legs = Leg.objects.filter(flights_q(statuses), source=source, start_ts__gte=since)
     state_key = {Leg.LANDED: "observed", Leg.INFERRED: "inferred", Leg.LOST: "lost"}
     for pk, state, n in (legs.filter(end_site_id__in=pks).values_list("end_site", "end_state")
                          .annotate(n=Count("pk"))):

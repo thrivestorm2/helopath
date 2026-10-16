@@ -173,7 +173,7 @@ class OperatorPageTests(TestCase):
         self.client.force_login(User.objects.create_superuser("root", password="x"))
         page = reverse("aircraft_detail", args=[self.a.pk])
         change = reverse("admin:tracker_aircraft_change", args=[self.a.pk])
-        data = {"status": "confirmed", "notes": "checked", **PERIODS_INLINE}
+        data = {"status": "confirmed", "operator": self.op.pk, "notes": "checked", **PERIODS_INLINE}
         r = self.client.post(f"{change}?next={page}", {**data, "_save": "Save"})
         self.assertRedirects(r, page, fetch_redirect_response=False)
         self.a.refresh_from_db()

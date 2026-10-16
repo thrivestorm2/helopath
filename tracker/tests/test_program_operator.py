@@ -17,24 +17,28 @@ class ProgramSetsOperatorTests(TestCase):
         self.phi = Operator.objects.create(name="PHI")
         self.lf = Program.objects.create(name="OSF Life Flight", operator=self.am)
         self.unknown = Program.objects.create(name="Mystery Flight")
-        self.a = Aircraft.objects.create(tail_number="N911LF", icao_hex="a00001", status=Aircraft.CONFIRMED)
+        self.a = Aircraft.objects.create(tail_number="N911LF", icao_hex="a00001", status=Aircraft.DISCOVERED)
         self.admin = User.objects.create_user("boss", password="x", is_staff=True)
         self.admin.groups.add(Group.objects.get(name="Admin"))
         self.client.force_login(self.admin)
 
-    def test_save_fills_blank_operator_only(self):
+    def test_program_operator_always_wins(self):
         self.a.program = self.unknown
         self.a.save(update_fields=["program"])
         self.a.refresh_from_db()
         self.assertIsNone(self.a.operator)  # program operator unknown: nothing to fill
-        self.a.program = self.lf
-        self.a.save(update_fields=["program"])
-        self.a.refresh_from_db()
-        self.assertEqual(self.a.operator, self.am)
         self.a.operator = self.phi
         self.a.save()
         self.a.refresh_from_db()
-        self.assertEqual(self.a.operator, self.phi)  # an operator already set is never replaced
+        self.assertEqual(self.a.operator, self.phi)  # still unknown: the aircraft's own operator stays
+        self.a.program = self.lf
+        self.a.save(update_fields=["program"])
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.operator, self.am)  # replaces the one set before
+        self.a.operator = self.phi
+        self.a.save()
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.operator, self.am)  # can't disagree with the program
 
     def test_use_button_sets_operator_and_queues_refresh(self):
         r = self.client.post(reverse("aircraft_apply", args=[self.a.pk]), {"field": "program", "value": self.lf.pk},
@@ -55,7 +59,7 @@ class ProgramSetsOperatorTests(TestCase):
         self.assertEqual(self.a.operator, self.am)
         self.assertContains(r, "Operator set to Air Methods, the operator of OSF Life Flight.")
 
-    def test_giving_a_program_an_operator_fills_its_aircraft(self):
+    def test_giving_a_program_an_operator_sets_it_on_all_its_aircraft(self):
         self.a.program = self.unknown
         self.a.save()
         other = Aircraft.objects.create(tail_number="N2", icao_hex="a00002", program=self.unknown, operator=self.phi)
@@ -63,8 +67,8 @@ class ProgramSetsOperatorTests(TestCase):
         self.unknown.save()
         self.a.refresh_from_db()
         other.refresh_from_db()
-        self.assertEqual((self.a.operator, other.operator), (self.am, self.phi))
-        self.assertEqual(self.unknown.operators_filled, 1)
+        self.assertEqual((self.a.operator, other.operator), (self.am, self.am))
+        self.assertEqual(self.unknown.operators_filled, 2)
 
     def test_migration_fills_known_blanks(self):
         # Rows as they were before the save hook existed.

@@ -9,6 +9,7 @@ from tracker.models import Leg, Site
 from tracker.sources.base import parse_readsb_trace
 
 from . import synth
+from tracker.tests import test_operator
 
 BASE = (40.00, -89.00)
 FAR_HOSPITAL = (40.90, -88.60)   # ~105 km NNE of base: ~28 min at 120 kt
@@ -135,7 +136,7 @@ class StitchPagesTests(TestCase):
 
         from tracker.models import Aircraft
 
-        a = Aircraft.objects.create(tail_number="N1ST", icao_hex="a1b2c3", status=Aircraft.CONFIRMED)
+        a = Aircraft.objects.create(tail_number="N1ST", icao_hex="a1b2c3", status=Aircraft.CONFIRMED, operator=test_operator())
         now = timezone.now()
         Leg.objects.create(hex="a1b2c3", aircraft=a, source="adsblol", start_ts=now, end_ts=now, start_lat=40,
                            start_lon=-89, end_lat=40.5, end_lon=-88.8, end_state=Leg.LOST, gaps_bridged=2)

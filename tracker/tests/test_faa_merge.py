@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from tracker.faa import merge_duplicate_faa_sites
 from tracker.models import Aircraft, LandingCluster, Leg, Mission, MonthlyAggregate, Site
+from tracker.tests import test_operator
 
 NOW = timezone.now() - timedelta(days=1)
 
@@ -21,7 +22,7 @@ class MergeTests(TestCase):
                                         notes="Roof pad")
         self.other = Site.objects.create(name="Base", site_type=Site.BASE, lat=40, lon=-89, weather_hangar=self.seed)
         self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
-                                         base=self.seed, inferred_base=self.seed)
+                                         base=self.seed, inferred_base=self.seed, operator=test_operator())
         self.leg = Leg.objects.create(hex="a00001", aircraft=self.a, source="adsblol", start_ts=NOW, end_ts=NOW,
                                       start_lat=40, start_lon=-89, end_lat=40.698, end_lon=-89.593,
                                       end_state=Leg.LANDED, start_site=self.other, end_site=self.seed)

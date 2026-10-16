@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from .inference.pipeline import local_day, local_tz
 from .models import Aircraft, IngestRun, LandingCluster, Leg, Mission, Site
+from .periods import flights_q
 from .resolution import landing_rate
 
 BASELINE_DAYS = 28
@@ -133,8 +134,8 @@ def daily_summary(source, statuses, today=None):
     start, end = _window(day)
     base_start, _ = _window(day - timedelta(days=BASELINE_DAYS))
 
-    missions = Mission.objects.filter(source=source, aircraft__status__in=statuses)
-    legs = Leg.objects.filter(source=source, aircraft__status__in=statuses)
+    missions = Mission.objects.filter(flights_q(statuses), source=source)
+    legs = Leg.objects.filter(flights_q(statuses), source=source)
     today_missions = missions.filter(start_ts__gte=start, start_ts__lt=end)
     today_legs = legs.filter(start_ts__gte=start, start_ts__lt=end)
 

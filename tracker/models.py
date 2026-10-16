@@ -58,10 +58,11 @@ class Program(SocialPagesMixin, models.Model):
         self.operators_filled = self.fill_aircraft_operators()
 
     def fill_aircraft_operators(self):
-        """Aircraft in this program with no operator get the program's operator. Returns how many changed."""
+        """Every aircraft currently in this program takes the program's operator (none when it has no operator:
+        its aircraft keep theirs). Past service periods are left as they were. Returns how many changed."""
         if not self.operator_id:
             return 0
-        return self.aircraft.filter(operator__isnull=True).update(operator_id=self.operator_id)
+        return self.aircraft.exclude(operator_id=self.operator_id).update(operator_id=self.operator_id)
 
 
 class Site(SocialPagesMixin, models.Model):
@@ -213,16 +214,22 @@ class Aircraft(SocialPagesMixin, models.Model):
         return self.display_name
 
     def save(self, *args, **kwargs):
-        if self.fill_operator_from_program() and kwargs.get("update_fields") is not None:
-            kwargs["update_fields"] = {*kwargs["update_fields"], "operator"}
+        changed = []
+        if self.fill_operator_from_program():
+            changed.append("operator")
+        if self.status == self.CONFIRMED and not self.operator_id:
+            self.status = self.DISCOVERED  # never confirmed without an operator: back to the review queue
+            changed.append("status")
+        if changed and kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = {*kwargs["update_fields"], *changed}
         super().save(*args, **kwargs)
 
     def fill_operator_from_program(self):
-        """No operator yet, but the program has one: use it. Never replaces an operator already set."""
-        if self.operator_id or not self.program_id:
+        """The program's operator, when it has one, is the aircraft's operator. Returns whether it changed."""
+        if not self.program_id:
             return False
         operator_id = Program.objects.filter(pk=self.program_id).values_list("operator_id", flat=True).first()
-        if operator_id:
+        if operator_id and operator_id != self.operator_id:
             self.operator_id = operator_id
             return True
         return False

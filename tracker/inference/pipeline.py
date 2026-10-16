@@ -29,7 +29,7 @@ from ..models import (
     RegistryAircraft,
     Site,
 )
-from ..periods import span_on, spans_by_aircraft
+from ..periods import flights_q, span_on, spans_by_aircraft
 from ..rules import apply_auto_confirm_rules
 from ..sources import get_adapter
 from .legs import infer_legs, is_qualifying_visit
@@ -513,7 +513,7 @@ def build_aggregates(source):
     rows = []
     for includes_unreviewed, statuses in ((True, Aircraft.VISIBLE), (False, (Aircraft.CONFIRMED,))):
         buckets = defaultdict(list)
-        for m in Mission.objects.filter(source=source, aircraft__status__in=statuses):
+        for m in Mission.objects.filter(flights_q(statuses), source=source):
             month = local_day(m.start_ts).replace(day=1)
             # Operator and base of the aircraft's service period on the mission date.
             key = (m.operator_id, m.base_id, m.origin_site_id, m.destination_site_id, month, m.label)

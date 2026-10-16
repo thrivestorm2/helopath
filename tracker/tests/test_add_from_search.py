@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from tracker.models import Aircraft, PendingRebuild, RegistryAircraft
+from tracker.models import Aircraft, Operator, PendingRebuild, RegistryAircraft
 from tracker.tests import PERIODS_INLINE
 
 
@@ -63,8 +63,12 @@ class AddFromSearchTests(TestCase):
     def test_saving_lands_on_the_aircraft_page_with_registry_details_and_a_recount(self):
         _, offer = self.offer("N123AB")
         self.client.force_login(User.objects.create_superuser("root", password="x"))
-        r = self.client.post(offer["url"], {"tail_number": "N123AB", "icao_hex": "A1B2C3", "status": "confirmed",
-                                            "origin": "manual", "notes": "", "_save": "Save", **PERIODS_INLINE})
+        data = {"tail_number": "N123AB", "icao_hex": "A1B2C3", "status": "confirmed", "origin": "manual", "notes": "",
+                "_save": "Save", **PERIODS_INLINE}
+        r = self.client.post(offer["url"], data)
+        self.assertContains(r, "Choose an operator before confirming this aircraft.")  # confirmed needs one
+        self.assertFalse(Aircraft.objects.exists())
+        r = self.client.post(offer["url"], {**data, "operator": Operator.objects.create(name="Life Flight").pk})
         a = Aircraft.objects.get(tail_number="N123AB")
         self.assertRedirects(r, reverse("aircraft_detail", args=[a.pk]), fetch_redirect_response=False)
         self.assertEqual((a.icao_hex, a.origin, a.status, a.make_model, a.registrant_hint),

@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from tracker.models import Aircraft, Leg, Site
 from tracker.quality import Quality, site_quality
+from tracker.tests import test_operator
 
 NOW = timezone.now() - timedelta(days=1)
 
@@ -16,7 +17,7 @@ class QualityTests(TestCase):
         self.h = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40.0, lon=-89.0)
         self.b = Site.objects.create(name="Base B", site_type=Site.BASE, lat=41.0, lon=-89.0)
         self.apt = Site.objects.create(name="Airport C", site_type=Site.AIRPORT, lat=42.0, lon=-89.0)
-        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED)
+        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED, operator=test_operator())
         self.d = Aircraft.objects.create(tail_number="N2", icao_hex="a00002", status=Aircraft.DISCOVERED)
 
     def leg(self, end=None, state=Leg.LANDED, start=None, on_ground=False, lat=40.0, lon=-89.0, days=1, ac=None):

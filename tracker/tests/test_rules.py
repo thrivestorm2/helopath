@@ -30,13 +30,16 @@ class AutoConfirmRuleTests(TestCase):
         lower = make("N2AM", "air methods llc")
         rejected = make("N3AM", "AIR METHODS LLC", status=Aircraft.REJECTED)
         other = make("N4XX", "NEWS COPTER INC")
+        self.assertEqual(apply_auto_confirm_rules(), 0)  # the preloaded rule has no operator: nothing confirmed
+        AutoConfirmRule.objects.filter(registrant_contains="AIR METHODS LLC").update(
+            operator=Operator.objects.create(name="Air Methods"))
         self.assertEqual(apply_auto_confirm_rules(), 2)
         for a, status in [(hit, "confirmed"), (lower, "confirmed"), (rejected, "rejected"), (other, "discovered")]:
             a.refresh_from_db()
             self.assertEqual(a.status, status, a.tail_number)
         entry = LogEntry.objects.get(object_id=str(hit.pk))
         self.assertEqual(entry.user, self.owner)
-        self.assertIn("Auto-confirmed by rule", entry.change_message)
+        self.assertIn("Auto-confirmed, operator set to Air Methods by rule", entry.change_message)
         self.assertEqual(apply_auto_confirm_rules(), 0)  # idempotent
 
     def test_rule_sets_operator_only_when_unset(self):
@@ -61,6 +64,7 @@ class AutoConfirmRuleTests(TestCase):
         call_command("apply_rules", stdout=io.StringIO())
         self.assertFalse(OpsTask.objects.exists())
         make("N8AM", "AIR METHODS LLC")
+        AutoConfirmRule.objects.update(operator=Operator.objects.create(name="Air Methods"))
         call_command("apply_rules", stdout=io.StringIO())
         self.assertEqual(OpsTask.objects.get().kind, OpsTask.REFRESH)
 
@@ -121,13 +125,13 @@ class RulesScreenTests(TestCase):
         a = make("N13AM", "AIR METHODS LLC")
         apply_auto_confirm_rules()  # preloaded rule has no operator yet
         a.refresh_from_db()
-        self.assertEqual((a.status, a.operator), (Aircraft.CONFIRMED, None))
+        self.assertEqual((a.status, a.operator), (Aircraft.DISCOVERED, None))  # never confirmed without one
         op = Operator.objects.create(name="Air Methods")
         rule = AutoConfirmRule.objects.get(registrant_contains="AIR METHODS LLC")
         self.client.force_login(self.admin)
         self.client.post(reverse("review_rules"), {"action": "set_operator", "rule": rule.pk, "operator": op.pk})
         a.refresh_from_db()
-        self.assertEqual(a.operator, op)
+        self.assertEqual((a.status, a.operator), (Aircraft.CONFIRMED, op))
 
     def test_most_visited_hospitals_one_per_line(self):
         make("N14H", "X", top_hospitals_hint="OSF St Francis (5); Carle (3); Memorial (1)")
