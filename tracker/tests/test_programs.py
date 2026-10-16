@@ -9,6 +9,7 @@ from django.urls import reverse
 from tracker.tests import login_viewer
 
 from tracker.models import Aircraft, Mission, Operator, Program, Site
+from tracker.tests import test_operator
 
 
 class ProgramTests(TestCase):
@@ -19,7 +20,7 @@ class ProgramTests(TestCase):
                                          operator=self.op, program=self.program)
         self.d = Aircraft.objects.create(tail_number="N2LF", icao_hex="a00002", status=Aircraft.DISCOVERED,
                                          program=self.program)
-        self.other = Aircraft.objects.create(tail_number="N3XX", icao_hex="a00003", status=Aircraft.CONFIRMED)
+        self.other = Aircraft.objects.create(tail_number="N3XX", icao_hex="a00003", status=Aircraft.CONFIRMED, operator=test_operator())
         hosp_a = Site.objects.create(name="Hospital A", lat=40.1, lon=-89.1)
         hosp_b = Site.objects.create(name="Hospital B", lat=40.2, lon=-89.2)
         ts = datetime(2026, 9, 3, 15, tzinfo=timezone.utc)

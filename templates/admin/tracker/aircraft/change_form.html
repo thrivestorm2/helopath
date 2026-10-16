@@ -1,5 +1,39 @@
 {% extends "admin/import_export/change_form.html" %}
 {% block after_field_sets %}{{ block.super }}
+{{ program_operators|json_script:"program-operators" }}
+<script>
+// Operator and program stay in step, on the aircraft and on each past service period row:
+// picking a program with an operator picks that operator; picking an operator narrows the Program search to its
+// programs (and ones with no operator yet) and clears a program that belongs to another operator.
+(function () {
+  const $ = window.django && django.jQuery;
+  if (!$ || !$.fn.select2) return;
+  const owners = JSON.parse(document.getElementById('program-operators').textContent);  // program id -> [id, name]
+  const partner = (el, field) => document.getElementById(el.id.replace(/(operator|program)$/, field));
+  $.fn.djangoAdminSelect2 = function () {  // Django's own, plus the chosen operator for the Program search
+    $.each(this, function (i, element) {
+      $(element).select2({ajax: {data: params => {
+        const out = {term: params.term, page: params.page, app_label: element.dataset.appLabel,
+                     model_name: element.dataset.modelName, field_name: element.dataset.fieldName};
+        const op = element.dataset.fieldName === 'program' && partner(element, 'operator');
+        if (op && op.value) out.operator = op.value;
+        return out;
+      }}});
+    });
+    return this;
+  };
+  $(document).on('change', 'select[id^="id_"][id$="program"]', function () {
+    const owner = owners[this.value], op = partner(this, 'operator');
+    if (!owner || !op || op.value === String(owner[0])) return;
+    if (!$(op).find('option[value="' + owner[0] + '"]').length) op.add(new Option(owner[1], owner[0]));
+    $(op).val(String(owner[0])).trigger('change');
+  });
+  $(document).on('change', 'select[id^="id_"][id$="operator"]', function () {
+    const prog = partner(this, 'program'), owner = prog && owners[prog.value];
+    if (this.value && owner && String(owner[0]) !== this.value) $(prog).val(null).trigger('change');
+  });
+})();
+</script>
 {% if add %}
 <script>
 // New aircraft: typing a tail number fills the hex (worked out from US N-numbers), shows what the FAA registry

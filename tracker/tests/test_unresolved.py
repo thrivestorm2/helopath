@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from tracker.models import Aircraft, LandingCluster, Leg, Site
 from tracker.resolution import category_metrics, diagnose, radius_suggestions
+from tracker.tests import test_operator
 
 NOW = timezone.now() - timedelta(days=2)
 
@@ -19,7 +20,7 @@ class UnresolvedData(TestCase):
                                         radius_m=300, elevation_ft=600)
         Site.objects.create(name="Hospital Far", site_type=Site.HOSPITAL, lat=40.5, lon=-89.0, radius_m=300)
         self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
-                                         inferred_base_lat=41.0, inferred_base_lon=-88.0)  # base is not a site
+                                         inferred_base_lat=41.0, inferred_base_lon=-88.0, operator=test_operator())  # base is not a site
         self.cluster = LandingCluster.objects.create(source="adsblol", lat=40.8, lon=-88.5, landing_count=5,
                                                      distinct_aircraft=2, first_seen=NOW, last_seen=NOW)
 
@@ -105,7 +106,7 @@ class LegCreateSiteTests(UnresolvedData):
         q = parse_qs(urlparse(row.add_site_url).query)
         self.assertEqual(urlparse(row.add_site_url).path, reverse("admin:tracker_site_add"))
         self.assertEqual((q["site_type"], q["lat"], q["lon"], q["name"]),
-                         (["base"], ["41.000500"], ["-88.000000"], ["N1 base"]))
+                         (["base"], ["41.000500"], ["-88.000000"], ["Test Operator base"]))
         self.assertEqual(q["next"], [reverse("unresolved") + "?cat=base_not_site&sort=date#legs"])
         self.assertContains(r, '>Create site</a>')
         # Other categories open as a hospital helipad to name from the nearby-name buttons.
@@ -173,7 +174,7 @@ class StudyAreaAndDepartureTests(TestCase):
         self.hosp = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40.0, lon=-89.0,
                                         radius_m=300, elevation_ft=600)
         self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
-                                         inferred_base_lat=41.0, inferred_base_lon=-88.0)
+                                         inferred_base_lat=41.0, inferred_base_lon=-88.0, operator=test_operator())
 
     def leg(self, at, end, state=Leg.LOST, alt=3000, site=None, start=(40.5, -89.5), start_site=None, minutes=20):
         t = NOW + timedelta(minutes=at)

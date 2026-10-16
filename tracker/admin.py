@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
-from django.db.models import Count
+from django.db.models import Count, F, Q
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -145,6 +145,7 @@ class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
     A program that still has aircraft can be deleted only by a superuser; Admin-group users can delete empty ones."""
 
     list_display = ("name", "operator", "aircraft_count")
+    ordering = ("name",)  # Meta.ordering is dropped by the aircraft-count GROUP BY on PostgreSQL
     list_filter = ("operator",)
     search_fields = ("name", "operator__name")
     autocomplete_fields = ("operator",)
@@ -160,7 +161,18 @@ class ProgramAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         super().save_model(request, obj, form, change)
         if obj.operators_filled:
             queue_refresh(request.user)  # monthly totals are kept per operator
-            self.message_user(request, f"{obj.operators_filled} aircraft in {obj} had no operator; set to {obj.operator}.")
+            n = obj.operators_filled
+            self.message_user(request, f"Operator set to {obj.operator} for {n} aircraft in {obj}. "
+                                       f"Past service periods are unchanged.")
+
+    def get_search_results(self, request, queryset, search_term):
+        # The aircraft form's Program box: with an operator chosen, only its programs (and ones with no operator).
+        queryset, may_have_duplicates = super().get_search_results(request, queryset, search_term)
+        operator = request.GET.get("operator", "")
+        if request.GET.get("field_name") == "program" and operator.isdigit():
+            queryset = queryset.filter(Q(operator_id=operator) | Q(operator__isnull=True)).order_by(
+                F("operator_id").asc(nulls_last=True), "name")  # the operator's own first
+        return queryset, may_have_duplicates
 
     def has_delete_permission(self, request, obj=None):
         if obj is not None and not request.user.is_superuser and obj.aircraft.exists():
@@ -187,6 +199,16 @@ class AircraftForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        operator, program = data.get("operator"), data.get("program")
+        if program and program.operator_id:
+            if operator and operator != program.operator and "operator" in self.changed_data \
+                    and "program" not in self.changed_data:
+                data["program"] = program = None  # a new operator: the old operator's program no longer applies
+            else:
+                data["operator"] = operator = program.operator  # the program's operator wins
+        if data.get("status") == Aircraft.CONFIRMED and not operator \
+                and ("status" in self.changed_data or not self.instance.pk):
+            self.add_error("operator", "Choose an operator before confirming this aircraft.")
         start, end = data.get("active_from"), data.get("active_to")
         if start and end and end < start:
             raise forms.ValidationError("'Active until' is before 'Active from'.")
@@ -219,6 +241,12 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
         ("Automation-owned (read-only)", {"fields": readonly_fields}),
     )
 
+    def render_change_form(self, request, context, *args, **kwargs):
+        # For the form's script: each program's operator, so picking a program picks its operator at once.
+        context["program_operators"] = {pk: [op, name] for pk, op, name in Program.objects.filter(
+            operator__isnull=False).values_list("pk", "operator_id", "operator__name")}
+        return super().render_change_form(request, context, *args, **kwargs)
+
     def response_add(self, request, obj, post_url_continue=None):
         # Added from the aircraft search: go to its page (where operator, program and base show) after Save.
         if request.GET.get("then") == "page" and "_save" in request.POST:
@@ -245,11 +273,16 @@ class AircraftAdmin(ReturnToPageMixin, ImportExportModelAdmin):
                 obj.make_model = obj.make_model or f"{reg.make} {reg.model}".strip()[:100]
                 obj.registrant_hint = obj.registrant_hint or reg.registrant_name[:200]
             flag_recount(f"aircraft {obj.tail_number} added")  # links its stored flights and missions
-        had_operator = obj.operator_id
+        had_operator = form.initial.get("operator") if change else None
+        was_confirmed = change and form.initial.get("status") == Aircraft.CONFIRMED
         was_retired = change and form.initial.get("retired", False)
         super().save_model(request, obj, form, change)
         if obj.operator_id != had_operator:
             queue_refresh(request.user)
+        if was_confirmed and obj.status == Aircraft.DISCOVERED and not obj.operator_id:
+            self.message_user(request, f"{obj} is unconfirmed: it has no operator. It is back in the review queue.",
+                              messages.WARNING)
+        elif obj.operator_id != had_operator and obj.program and obj.program.operator_id == obj.operator_id:
             self.message_user(request, f"Operator set to {obj.operator}, the operator of {obj.program}.")
         self._service_period(request, obj, form, was_retired)
 
@@ -308,3 +341,7 @@ class AutoConfirmRuleAdmin(admin.ModelAdmin):
         if not change:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+        if not obj.operator_id and not (obj.program and obj.program.operator_id):
+            self.message_user(request, "This rule has no operator (nor a program with one), so it cannot confirm "
+                                       "aircraft: they stay in the review queue until an operator is set.",
+                              messages.WARNING)

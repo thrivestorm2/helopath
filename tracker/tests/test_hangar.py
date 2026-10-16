@@ -7,6 +7,7 @@ from django.urls import reverse
 from tracker.hangars import suggest_hangars
 from tracker.inference import pipeline
 from tracker.models import Aircraft, Leg, Mission, Operator, Site
+from tracker.tests import test_operator
 
 T0 = datetime(2026, 9, 2, 14, tzinfo=timezone.utc)  # 09:00 Chicago
 SCENE = (40.25, -89.05)
@@ -47,7 +48,7 @@ class WeatherHangarMissionTests(TestCase):
         self.base = mk("Base One", Site.BASE, 40.0, -89.0)
         self.hangar = mk("Airport KPIA", Site.AIRPORT, 40.66, -89.69, radius_m=1500)
         self.hosp = mk("Hospital A", Site.HOSPITAL, 40.1, -89.2)
-        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED, base=self.base)
+        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED, base=self.base, operator=test_operator())
         legs = LegFactory(self.a)
         legs.fly(self.base, self.hangar)                         # evening: storm coming, go to the hangar
         legs.next_day().fly(self.hangar, SCENE, self.hosp, self.hangar)  # morning call flown from the hangar
@@ -106,7 +107,7 @@ class HospitalBaseTests(TestCase):
         self.hosp_a = Site.objects.create(name="Hospital A", site_type=Site.HOSPITAL, lat=40.0, lon=-89.0)
         self.hosp_b = Site.objects.create(name="Hospital B", site_type=Site.HOSPITAL, lat=40.3, lon=-88.9)
         self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
-                                         base=self.hosp_a)
+                                         base=self.hosp_a, operator=test_operator())
         self.legs = LegFactory(self.a)
 
     def test_return_to_hospital_base_is_the_drop_off(self):
@@ -127,7 +128,7 @@ class HospitalBaseTests(TestCase):
     def _other_landings(self, tail, base, at, n):
         """n landings at `at` by another aircraft based at `base` (None: no base)."""
         other = Aircraft.objects.create(tail_number=tail, icao_hex=tail.lower()[-6:].rjust(6, "b"),
-                                        status=Aircraft.CONFIRMED, base=base)
+                                        status=Aircraft.CONFIRMED, base=base, operator=test_operator())
         legs = LegFactory(other)
         legs.t = T0 + timedelta(days=5)
         for _ in range(n):
@@ -176,7 +177,7 @@ class SiteHangarPageTests(TestCase):
         self.airport = Site.objects.create(name="Airport KPIA", site_type=Site.AIRPORT, lat=40.66, lon=-89.69,
                                            faa_id="PIA")
         self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED,
-                                         base=self.base)
+                                         base=self.base, operator=test_operator())
         legs = LegFactory(self.a)
         for _ in range(2):
             legs.fly(self.airport, self.base).next_day()

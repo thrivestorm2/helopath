@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from tracker import places
 from tracker.models import Aircraft, LandingCluster, Leg, PlaceSuggestion, Site
+from tracker.tests import test_operator
 
 AREAS = {"elements": [{"type": "area", "tags": {"admin_level": "8", "name": "Peoria"}},
                       {"type": "area", "tags": {"admin_level": "4", "name": "Illinois", "ISO3166-2": "US-IL"}}]}
@@ -100,7 +101,7 @@ class ClusterQueueOrderTests(TestCase):
         for i, n in enumerate([4, 30, 12]):
             LandingCluster.objects.create(source="adsblol", lat=40 + i, lon=-89, landing_count=n, distinct_aircraft=1,
                                           first_seen=now, last_seen=now)
-        ac = Aircraft.objects.create(tail_number="N1", icao_hex="b00001", status=Aircraft.CONFIRMED)
+        ac = Aircraft.objects.create(tail_number="N1", icao_hex="b00001", status=Aircraft.CONFIRMED, operator=test_operator())
         for days in (1, 2, 200):
             ts = now - timedelta(days=days)
             Leg.objects.create(hex="b00001", aircraft=ac, source="adsblol", start_ts=ts, end_ts=ts, start_lat=42,

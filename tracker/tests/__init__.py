@@ -12,3 +12,9 @@ def login_viewer(client, username="viewer"):
     user.groups.add(Group.objects.get(name="Viewer"))
     client.force_login(user)
     return user
+
+
+def test_operator(name="Test Operator"):
+    """Confirmed aircraft need an operator; fixtures that do not care which use this one."""
+    from tracker.models import Operator
+    return Operator.objects.get_or_create(name=name)[0]

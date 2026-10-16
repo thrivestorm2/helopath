@@ -9,6 +9,7 @@ from django.utils import timezone
 from tracker.inference import pipeline
 from tracker.models import Aircraft, Leg, Site
 from tracker.resolution import auto_expand_radii, auto_radius_ok
+from tracker.tests import test_operator
 
 NOW = timezone.now() - timedelta(days=2)
 
@@ -16,7 +17,7 @@ NOW = timezone.now() - timedelta(days=2)
 class AutoRadiusTests(TestCase):
     def setUp(self):
         User.objects.create_superuser("root", password="x")
-        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED)
+        self.a = Aircraft.objects.create(tail_number="N1", icao_hex="a00001", status=Aircraft.CONFIRMED, operator=test_operator())
 
     def landings(self, lat, lon, dlats):
         for dlat in dlats:

@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from tracker.models import FaaFacility, Site
 from tracker.seed import seed_sites
+from tracker.tests import test_operator
 
 CSV = ("SITE_TYPE_CODE,STATE_CODE,ARPT_ID,CITY,ARPT_NAME,FACILITY_USE_CODE,LAT_DECIMAL,LONG_DECIMAL,ELEV\n"
        "A,IL,PIA,PEORIA,GENERAL WAYNE A DOWNING PEORIA INTL,PU,40.6642,-89.6933,660\n"
@@ -112,7 +113,7 @@ class AutoFaaSiteTests(TestCase):
                                    lat=43.0910, lon=-88.1785, elevation_ft=860)
         FaaFacility.objects.create(faa_id="IL55", name="Quiet Heliport", site_type=Site.OTHER, city="Q", state="IL",
                                    lat=41.0005, lon=-88.0)
-        self.confirmed = Aircraft.objects.create(tail_number="N1", icao_hex="c00001", status=Aircraft.CONFIRMED)
+        self.confirmed = Aircraft.objects.create(tail_number="N1", icao_hex="c00001", status=Aircraft.CONFIRMED, operator=test_operator())
         discovered = Aircraft.objects.create(tail_number="N2", icao_hex="c00002", status=Aircraft.DISCOVERED)
         now = timezone.now()
         for ac, lat, lon, n in [(self.confirmed, 43.0902, -88.1785, 2), (discovered, 43.0902, -88.1786, 2),

@@ -148,7 +148,8 @@ class PipelineTests(TestCase):
     def test_rule_confirms_newly_discovered_aircraft(self):
         from tracker.models import AutoConfirmRule
 
-        AutoConfirmRule.objects.create(registrant_contains="LIFE FLIGHT")
+        AutoConfirmRule.objects.create(registrant_contains="LIFE FLIGHT",
+                                       operator=Operator.objects.get_or_create(name="Life Flight Ops")[0])
         self._ingest_all()
         self.assertEqual(Aircraft.objects.get().status, Aircraft.CONFIRMED)
         # Discovery and the rule run before aggregates, so confirmed-only figures exist straight away.

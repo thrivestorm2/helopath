@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from tracker.lookup import call_sign_suggestions, lookup_links, program_suggestions
 from tracker.models import Aircraft, Leg, Operator, Program, Site
+from tracker.tests import test_operator
 
 T = datetime(2026, 9, 3, 15, tzinfo=timezone.utc)
 
@@ -19,7 +20,7 @@ class LookupTests(TestCase):
         self.a = Aircraft.objects.create(tail_number="N911LF", icao_hex="a00001", status=Aircraft.CONFIRMED,
                                          base=self.base, operator=self.op)
         Aircraft.objects.create(tail_number="N912LF", icao_hex="a00002", status=Aircraft.CONFIRMED,
-                                base=self.base, program=self.lf)
+                                base=self.base, program=self.lf, operator=test_operator())
         for ids in ("LIFE3,N911LF", "LIFE3", "911LF", "lifeg3"):
             Leg.objects.create(hex="a00001", aircraft=self.a, source="adsblol", start_ts=T, end_ts=T, start_lat=40,
                                start_lon=-89, end_lat=40, end_lon=-89, end_state="landed_observed", callsign=ids)
@@ -299,7 +300,7 @@ class SocialIconTests(TestCase):
         self.assertContains(r, 'class="social-icon social-instagram" href="https://www.instagram.com/osf_stfrancis/"')
 
         prog = Program.objects.create(name="OSF Life Flight", facebook="osflifeflight")
-        a = Aircraft.objects.create(tail_number="N911LF", icao_hex="ad077b", status=Aircraft.CONFIRMED, program=prog)
+        a = Aircraft.objects.create(tail_number="N911LF", icao_hex="ad077b", status=Aircraft.CONFIRMED, program=prog, operator=test_operator())
         r = self.client.get(reverse("aircraft_detail", args=[a.pk]))
         self.assertNotContains(r, "social-icon")  # the program's page stays in Look it up, not the header
         a.instagram = "lifeflight1"

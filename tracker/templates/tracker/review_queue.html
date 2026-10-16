@@ -61,8 +61,9 @@ Operator, program and base boxes suggest as you type; a new operator or program 
   <div>
     <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:10px">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.get_full_path }}">
-      <button class="primary" name="action" value="confirm">Confirm</button>
+      <button class="primary" name="action" value="confirm"{% if not a.operator %} disabled{% endif %}>Confirm</button>
       <button class="danger" name="action" value="reject">Reject</button>
+      {% if not a.operator %}<p class="muted" style="margin:4px 0 0">Set an operator (or a program with one) to confirm.</p>{% endif %}
     </form>
     <form method="post" action="{% url 'review_action' a.pk %}" style="margin-bottom:10px">{% csrf_token %}
       <input type="hidden" name="next" value="{{ request.get_full_path }}#a{{ a.pk }}">

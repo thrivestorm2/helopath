@@ -46,6 +46,7 @@ from .models import (
     Site,
 )
 from .operators import absorb_operator
+from .periods import flights_q
 from .ops import queue_refresh
 from .quality import site_quality
 from .resolution import (CATEGORY_ORDER, CATEGORY_TITLES, category_metrics, diagnose, landing_rate, next_legs,
@@ -74,6 +75,11 @@ def _statuses(request):
     return (Aircraft.CONFIRMED,) if _confirmed_only(request) else Aircraft.VISIBLE
 
 
+def _flights(request):
+    """Q on Leg or Mission for the flights this request shows (confirmed-only leaves out periods with no operator)."""
+    return flights_q(_statuses(request))
+
+
 def _log(user, obj, message):
     LogEntry.objects.log_actions(
         user_id=user.pk, queryset=[obj], action_flag=CHANGE, change_message=message, single_object=True
@@ -98,7 +104,7 @@ def _page(request, qs, per_page=50):
 
 
 def medical_legs(request, days=None):
-    qs = Leg.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request))
+    qs = Leg.objects.filter(_flights(request), source=SOURCE)
     if days:
         qs = qs.filter(start_ts__gte=timezone.now() - timedelta(days=days))
     return qs
@@ -112,7 +118,7 @@ def resolved_rate(legs):
 def dashboard(request):
     legs = medical_legs(request, days=90)
     rate, resolved, total = resolved_rate(legs)
-    missions = Mission.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request))
+    missions = Mission.objects.filter(_flights(request), source=SOURCE)
     legs_by_month = Counter(local_day(ts).strftime("%Y-%m") for ts in legs.values_list("start_ts", flat=True))
     missions_by_month = Counter(local_day(ts).strftime("%Y-%m") for ts in missions.values_list("start_ts", flat=True))
     months = sorted(set(legs_by_month) | set(missions_by_month))
@@ -463,7 +469,7 @@ def operator_link(request, operator_id, site=None):
 
 def site_detail(request, pk):
     site = get_object_or_404(Site, pk=pk)
-    arrivals = Leg.objects.filter(source=SOURCE, end_site=site, aircraft__status__in=_statuses(request))
+    arrivals = Leg.objects.filter(_flights(request), source=SOURCE, end_site=site)
     table = defaultdict(Counter)  # (operator pk or None, name) -> month -> arrivals
     by_aircraft = defaultdict(lambda: defaultdict(Counter))  # operator key -> aircraft pk -> month -> arrivals
     for op_id, op, a_id, ts in arrivals.values_list("aircraft__operator_id", "aircraft__operator__name",
@@ -514,7 +520,7 @@ def _route_rows(request, flows, limit=15, **scope):
 
 def route_map(request):
     get = request.GET
-    qs = Mission.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request))
+    qs = Mission.objects.filter(_flights(request), source=SOURCE)
     for param, field in (("origin", "origin_site"), ("dest", "destination_site"), ("operator", "operator"),
                          ("program", "program")):  # operator/program of the service period on the mission date
         value = get.get(param, "")
@@ -564,7 +570,7 @@ def program_detail(request, pk):
     can_delete = is_admin(request.user) and (request.user.is_superuser or not program.aircraft.exists())
     aircraft = (Aircraft.objects.filter(program=program, status__in=_statuses(request))
                 .select_related("operator", "base", "inferred_base").order_by(Aircraft.sort_name()))
-    missions = Mission.objects.filter(source=SOURCE, program=program, aircraft__status__in=_statuses(request))
+    missions = Mission.objects.filter(_flights(request), source=SOURCE, program=program)
     labels = [code for code, _ in Mission.LABELS]
     per_month = defaultdict(Counter)
     flows = Counter()
@@ -662,7 +668,7 @@ def operator_detail(request, pk):
 
 
 def missions(request):
-    qs = Mission.objects.filter(source=SOURCE, aircraft__status__in=_statuses(request)).select_related(
+    qs = Mission.objects.filter(_flights(request), source=SOURCE).select_related(
         "aircraft", "aircraft__operator", "origin_site", "destination_site")
     for param, field in (("label", "label"), ("aircraft", "aircraft_id"), ("operator", "operator_id")):
         if request.GET.get(param):
@@ -952,7 +958,9 @@ def review_queue(request):
 def review_action(request, pk):
     aircraft = get_object_or_404(Aircraft, pk=pk)
     action = request.POST.get("action")
-    if action in ("confirm", "reject"):
+    if action == "confirm" and not aircraft.operator_id:
+        messages.error(request, f"Choose an operator before confirming {aircraft}.")
+    elif action in ("confirm", "reject"):
         aircraft.status = Aircraft.CONFIRMED if action == "confirm" else Aircraft.REJECTED
         aircraft.save(update_fields=["status"])
         _log(request.user, aircraft, f"Review: {action}")
@@ -964,9 +972,19 @@ def review_action(request, pk):
         name = " ".join(request.POST.get("operator_name", "").split())[:200]
         op = Operator.objects.get_or_create(name=name)[0] if name else None
         aircraft.operator = op
-        aircraft.save(update_fields=["operator"])
-        _log(request.user, aircraft, f"Review: operator set to {op or 'none'}")
-        messages.success(request, f"{aircraft}: operator {op or 'cleared'}.")
+        dropped = aircraft.program if (op and aircraft.program and aircraft.program.operator_id
+                                       and aircraft.program.operator_id != op.pk) else None
+        if dropped:  # another operator's program no longer applies
+            aircraft.program = None
+        was_confirmed = aircraft.status == Aircraft.CONFIRMED
+        aircraft.save(update_fields=["operator", "program"])  # a program with an operator keeps that operator
+        op = aircraft.operator
+        also = f"; program {dropped} cleared (flown by {dropped.operator})" if dropped else ""
+        if was_confirmed and aircraft.status == Aircraft.DISCOVERED:
+            also += "; unconfirmed: it has no operator"
+            queue_refresh(request.user)
+        _log(request.user, aircraft, f"Review: operator set to {op or 'none'}{also}")
+        messages.success(request, f"{aircraft}: operator {op or 'cleared'}{also}.")
     elif action == "program":
         name = " ".join(request.POST.get("program_name", "").split())[:200]
         program = None
@@ -1277,7 +1295,7 @@ def _open_clusters(statuses=Aircraft.VISIBLE):
     recent = Counter()
     index = SiteIndex(clusters)
     for lat, lon in Leg.objects.filter(
-            source=SOURCE, end_state=Leg.LANDED, end_site__isnull=True, aircraft__status__in=statuses,
+            flights_q(statuses), source=SOURCE, end_state=Leg.LANDED, end_site__isnull=True,
             end_ts__gte=timezone.now() - timedelta(days=settings.SPOT_MAP_DAYS)).values_list("end_lat", "end_lon"):
         near = index.within(lat, lon, settings.CLUSTER_RADIUS_M)
         if near:
