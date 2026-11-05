@@ -67,6 +67,7 @@ python manage.py backfill --days 90
 python manage.py nightly
 
 # Background worker (production): runs nightly at 18:30 UTC plus Operations-page tasks.
+# A failed nightly is retried 1 h, 2 h, 4 h and 8 h later (NIGHTLY_RETRY_FIRST_MIN, NIGHTLY_RETRY_MAX).
 python manage.py run_worker
 
 # Full rebuild by hand (site edits apply on their own; threshold changes need this):

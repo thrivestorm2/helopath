@@ -1192,6 +1192,7 @@ def operations(request):
         "raw": rawstore.stats(SOURCE),
         "last_run": IngestRun.objects.filter(source=SOURCE).first(),
         "nightly_at": f"{dj_settings.NIGHTLY_UTC_HOUR:02d}:{dj_settings.NIGHTLY_UTC_MINUTE:02d} UTC",
+        "nightly_retry_max": dj_settings.NIGHTLY_RETRY_MAX,
         "rebuild_runs": RebuildRun.objects.all()[:10],
         "full_rebuild_at": f"{dj_settings.FULL_REBUILD_LOCAL_HOUR}:00",
         "full_rebuild_weekday": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",

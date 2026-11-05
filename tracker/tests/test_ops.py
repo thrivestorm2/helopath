@@ -1,7 +1,7 @@
 import io
 import os
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from django.contrib.auth.models import Group, User
@@ -62,6 +62,42 @@ class WorkerTests(TestCase):
             self.assertEqual(tick(now=EVENING, log=quiet), "idle")
         nightly.assert_called_once()
 
+    def test_failed_nightly_retries_at_doubling_intervals(self):
+        """Retries 1 h, 2 h, 4 h, 8 h after the previous attempt starts; then none until the next nightly."""
+        at = lambda h, m=0: EVENING.replace(hour=0, minute=0) + timedelta(hours=h, minutes=m)  # noqa: E731
+        with mock.patch("tracker.management.commands.run_worker.run_nightly", return_value=False) as nightly, \
+                mock.patch("tracker.management.commands.run_worker.process_overnight", return_value=None), \
+                mock.patch("tracker.management.commands.run_worker.utc_today", return_value=EVENING.date()):
+            self.assertEqual(tick(now=at(19), log=quiet), "nightly failed; retry 1 at 20:00 UTC")
+            self.assertEqual(tick(now=at(19, 59), log=quiet), "idle")
+            self.assertEqual(tick(now=at(20), log=quiet), "nightly retry 1 failed; retry 2 at 22:00 UTC")
+            self.assertEqual(tick(now=at(22), log=quiet), "nightly retry 2 failed; retry 3 at 02:00 UTC")
+            self.assertEqual(tick(now=at(26), log=quiet), "nightly retry 3 failed; retry 4 at 10:00 UTC")
+            self.assertEqual(tick(now=at(34), log=quiet), "nightly retry 4 failed; no more retries until the next nightly")
+            self.assertEqual(tick(now=at(40), log=quiet), "idle")
+        self.assertEqual(nightly.call_count, 5)
+        state = WorkerState.get()
+        self.assertEqual((state.nightly_retries, state.nightly_retry_at), (4, None))
+
+    def test_successful_retry_stops_retrying(self):
+        with mock.patch("tracker.management.commands.run_worker.run_nightly", side_effect=[False, True]) as nightly, \
+                mock.patch("tracker.management.commands.run_worker.utc_today", return_value=EVENING.date()):
+            tick(now=EVENING, log=quiet)
+            self.assertEqual(tick(now=EVENING + timedelta(hours=1), log=quiet), "nightly retry 1: ok")
+            self.assertEqual(tick(now=EVENING + timedelta(hours=9), log=quiet), "idle")
+        self.assertEqual(nightly.call_count, 2)
+        self.assertIsNone(WorkerState.get().nightly_retry_at)
+
+    def test_next_nightly_resets_the_retry_count(self):
+        WorkerState.objects.update_or_create(pk=1, defaults={
+            "last_nightly": EVENING.date() - timedelta(days=1), "nightly_retries": 4})
+        with mock.patch("tracker.management.commands.run_worker.run_nightly", return_value=False), \
+                mock.patch("tracker.management.commands.run_worker.utc_today", return_value=EVENING.date()):
+            tick(now=EVENING, log=quiet)
+        state = WorkerState.get()
+        self.assertEqual(state.nightly_retries, 0)
+        self.assertEqual(state.nightly_retry_at, EVENING + timedelta(hours=1))
+
     def test_queued_rebuild_is_processed(self):
         RebuildRequest.objects.create(source="adsblol")
         with mock.patch("tracker.ingest.pipeline.rebuild") as rebuild:
@@ -98,6 +134,10 @@ class OperationsPageTests(TestCase):
         r = self.client.get(url)
         self.assertContains(r, "Load FAA registry")
         self.assertContains(r, "never started")
+        self.assertNotContains(r, "nightly failed")
+        WorkerState.objects.update_or_create(pk=1, defaults={
+            "nightly_retries": 1, "nightly_retry_at": datetime(2026, 10, 9, 21, 0, tzinfo=timezone.utc)})
+        self.assertContains(self.client.get(url), "retry 2 of 4 at 21:00 UTC")
 
     def test_queue_task_once(self):
         self.client.force_login(self.admin)

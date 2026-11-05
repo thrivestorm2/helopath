@@ -542,6 +542,10 @@ class WorkerState(models.Model):
 
     heartbeat = models.DateTimeField(null=True, blank=True)
     last_nightly = models.DateField(null=True, blank=True)
+    # Retries after a failed nightly (tracker/management/commands/run_worker.py): how many have run, and when the
+    # next is due (null: none pending).
+    nightly_retries = models.PositiveSmallIntegerField(default=0)
+    nightly_retry_at = models.DateTimeField(null=True, blank=True)
     current = models.CharField(max_length=200, blank=True)
     # The counting-rules version the last full rebuild applied (tracker.rebuild_flag), and the overnight slot.
     rules_version = models.PositiveIntegerField(default=0)
