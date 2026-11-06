@@ -117,6 +117,11 @@ PRIMARY_SOURCE = "adsblol"
 # Background worker: when the daily ingest runs (UTC). adsb.lol publishes a day during the following day.
 NIGHTLY_UTC_HOUR = _env("NIGHTLY_UTC_HOUR", 18)
 NIGHTLY_UTC_MINUTE = _env("NIGHTLY_UTC_MINUTE", 30)
+# A failed nightly is retried with a decaying rate: the first retry this long after the failed run starts, each
+# later one twice as long after the previous (60 min: 1 h, 2 h, 4 h, 8 h). Four retries end about 15 h later,
+# before the next regular nightly, which starts the count again. Only days not yet ingested are scanned again.
+NIGHTLY_RETRY_FIRST_MIN = _env("NIGHTLY_RETRY_FIRST_MIN", 60)
+NIGHTLY_RETRY_MAX = _env("NIGHTLY_RETRY_MAX", 4)
 # Rebuilds (tracker.rebuild_flag): recounts and partial rebuilds run this long after the last edit (several quick
 # edits share one run); a partial touching more than this share of aircraft waits for the overnight full rebuild.
 QUICK_UPDATE_DELAY_S = _env("QUICK_UPDATE_DELAY_S", 120)

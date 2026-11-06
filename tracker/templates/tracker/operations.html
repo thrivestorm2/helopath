@@ -1,10 +1,10 @@
-{% extends "tracker/base.html" %}{% load humanize %}
+{% extends "tracker/base.html" %}{% load humanize tz %}
 {% block content %}
 <h1>Operations</h1>
 <div class="grid">
   <div class="card stat"><div class="k">Background worker</div>
     <div class="v" style="font-size:20px">{% if alive %}<span class="badge ok">running</span>{% elif state.heartbeat %}<span class="badge failed">not responding</span>{% else %}<span class="badge failed">never started</span>{% endif %}</div>
-    <div class="muted">{% if state.heartbeat %}last seen {{ state.heartbeat|naturaltime }}{% endif %}{% if state.current %}<br>Now: {{ state.current }}{% endif %}</div></div>
+    <div class="muted">{% if state.heartbeat %}last seen {{ state.heartbeat|naturaltime }}{% endif %}{% if state.current %}<br>Now: {{ state.current }}{% endif %}{% if state.nightly_retry_at %}<br><span class="badge failed">nightly failed</span> retry {{ state.nightly_retries|add:1 }} of {{ nightly_retry_max }} at {{ state.nightly_retry_at|utc|date:"H:i" }} UTC{% endif %}</div></div>
   <div class="card stat"><div class="k">Backfill progress</div><div class="v">{{ days_done }}/{{ days_target }}</div><div class="muted">days ingested</div></div>
   <div class="card stat"><div class="k">FAA registry</div><div class="v">{{ registry_count|intcomma }}</div><div class="muted">rotorcraft in candidate pool</div></div>
   <div class="card stat"><div class="k">Sites</div><div class="v">{{ site_count|intcomma }}</div><div class="muted">{{ hospital_count|intcomma }} hospital helipads</div></div>
